@@ -66,6 +66,25 @@ Output (abridged):
 Valve default builds store `1000 + hero` (`is_default_build`). Invalid input
 prints `ERROR: ...` to stderr and exits 1.
 
+Add `--raw` for the lossless protobuf dump instead of the interpreted build:
+
+```sh
+python python/decode_build_code.py data/examplecodefromgame.md --raw
+```
+
+```json
+{
+  "input": {"base64_chars": 544, "stored_bytes": 406, "zstd": true, "decoded_bytes": 759},
+  "tree": [
+    {"field": 1, "wire": 0, "wire_type": "varint", "value": 1034}
+  ]
+}
+```
+
+Abridged: every field follows in wire order with its number, wire type and
+value — varint/fixed32/fixed64 raw, length-delimited chunks as `text`, nested
+`message`, or `bytes_base64`. The cached `.kv3` blobs decode in the same mode.
+
 ### decode_kv3.py
 
 Decodes the client's binary KeyValues3 v5 build cache (LZ4) into JSON. The
