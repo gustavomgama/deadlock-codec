@@ -15,9 +15,10 @@ Exit 0 if all pass, 1 otherwise. Prints a per-step report.
 import json, os, sys, subprocess, tempfile
 
 BASE = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(BASE)
 PY = os.environ.get("DEADLOCK_PYTHON", r"C:\Users\helmet\AppData\Roaming\uv\python\cpython-3.13-windows-x86_64-none\python.exe")
-ITEMS_RAW = os.path.join(BASE, "items_raw.json")
-HEROES_RAW = os.path.join(BASE, "heroes_raw.json")
+ITEMS_RAW = os.path.join(REPO_ROOT, "data", "items_raw.json")
+HEROES_RAW = os.path.join(REPO_ROOT, "data", "heroes_raw.json")
 
 items = json.load(open(ITEMS_RAW, encoding="utf-8"))
 heroes = json.load(open(HEROES_RAW, encoding="utf-8"))

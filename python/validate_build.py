@@ -2,11 +2,13 @@ import json
 import sys
 import pathlib
 
-ROOT = pathlib.Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT))
+SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
+ROOT = SCRIPT_DIR.parent
+DATA_DIR = ROOT / "data"
+sys.path.insert(0, str(SCRIPT_DIR))
 
-HEROES = {h.get("id"): h for h in json.loads((ROOT / "heroes_raw.json").read_text(encoding="utf-8"))}
-ITEMS = {it.get("id"): it for it in json.loads((ROOT / "items_raw.json").read_text(encoding="utf-8"))}
+HEROES = {h.get("id"): h for h in json.loads((DATA_DIR / "heroes_raw.json").read_text(encoding="utf-8"))}
+ITEMS = {it.get("id"): it for it in json.loads((DATA_DIR / "items_raw.json").read_text(encoding="utf-8"))}
 
 
 def resolve_hero(obj):

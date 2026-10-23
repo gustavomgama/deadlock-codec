@@ -417,7 +417,7 @@ def decode(path):
 
 
 def load_items():
-    path = pathlib.Path(__file__).resolve().parent / "items_raw.json"
+    path = pathlib.Path(__file__).resolve().parent.parent / "data" / "items_raw.json"
     if not path.exists():
         return {}
     return {i["id"]: i for i in json.loads(path.read_text(encoding="utf-8"))}

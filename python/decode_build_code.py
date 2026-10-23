@@ -83,8 +83,8 @@ def _ability_heroes():
         return _ABILITY_HERO_CACHE
     _ABILITY_HERO_CACHE = {}
     try:
-        root = os.path.dirname(os.path.abspath(__file__))
-        with open(os.path.join(root, 'items_raw.json'), encoding='utf-8') as f:
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, 'data', 'items_raw.json'), encoding='utf-8') as f:
             for it in json.load(f):
                 if it.get('type') == 'ability':
                     for h in (it.get('heroes') or []):

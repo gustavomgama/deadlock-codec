@@ -1,0 +1,19 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    base64 (0.3.0)
+    zstd-ruby (2.0.10)
+
+PLATFORMS
+  x64-mingw-ucrt
+
+DEPENDENCIES
+  base64
+  zstd-ruby (~> 2.0)
+
+CHECKSUMS
+  base64 (0.3.0) sha256=27337aeabad6ffae05c265c450490628ef3ebd4b67be58257393227588f5a97b
+  zstd-ruby (2.0.10) sha256=b5f9410ccfad78ae25c3a5d7dfe16234d2bde8841fc79d8166773fd0a4028f9d
+
+BUNDLED WITH
+  4.0.20
