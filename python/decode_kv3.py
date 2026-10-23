@@ -10,8 +10,15 @@ Layout implemented here follows ValveResourceFormat's BinaryKV3 reader:
   (object lengths, value lanes, type bytes, blob lengths) and LZ4 chained
   binary blobs.
 
+Output is lossless by default: every header field, the payload metadata, the
+string table, every tree node with its KV3 type byte and flags, duplicate
+object keys in file order, and a completeness block that accounts for every
+input byte and lists anything left unconsumed. Non-ASCII text is JSON-escaped
+so the document is always valid JSON. Pass --plain for the old compact tree of
+plain Python values.
+
 Usage:
-    python decode_kv3.py <file.kv3> [--out out.json] [--strings-only] [--builds]
+    python decode_kv3.py <file.kv3> [--out out.json] [--plain] [--strings-only] [--builds]
     python decode_kv3.py <file.kv3> --self-test
 """
 import argparse
@@ -31,6 +38,28 @@ INT64_ZERO, INT64_ONE, DOUBLE_ZERO, DOUBLE_ONE, FLOAT = range(15, 20)
 INT16, UINT16, INT8, UINT8 = range(20, 24)
 ARRAY_TYPE_BYTE_LENGTH, ARRAY_TYPE_AUXILIARY_BUFFER = 24, 25
 UINT32_ZERO, UINT32_ONE = 26, 27
+
+TYPE_NAMES = {
+    NULL: "NULL", BOOLEAN: "BOOLEAN", INT64: "INT64", UINT64: "UINT64", DOUBLE: "DOUBLE",
+    STRING: "STRING", BINARY_BLOB: "BINARY_BLOB", ARRAY: "ARRAY", OBJECT: "OBJECT",
+    ARRAY_TYPED: "ARRAY_TYPED", INT32: "INT32", UINT32: "UINT32",
+    BOOLEAN_TRUE: "BOOLEAN_TRUE", BOOLEAN_FALSE: "BOOLEAN_FALSE",
+    INT64_ZERO: "INT64_ZERO", INT64_ONE: "INT64_ONE", DOUBLE_ZERO: "DOUBLE_ZERO",
+    DOUBLE_ONE: "DOUBLE_ONE", FLOAT: "FLOAT", INT16: "INT16", UINT16: "UINT16",
+    INT8: "INT8", UINT8: "UINT8", ARRAY_TYPE_BYTE_LENGTH: "ARRAY_TYPE_BYTE_LENGTH",
+    ARRAY_TYPE_AUXILIARY_BUFFER: "ARRAY_TYPE_AUXILIARY_BUFFER",
+    UINT32_ZERO: "UINT32_ZERO", UINT32_ONE: "UINT32_ONE",
+}
+TYPED_ARRAYS = frozenset((ARRAY_TYPED, ARRAY_TYPE_BYTE_LENGTH, ARRAY_TYPE_AUXILIARY_BUFFER))
+
+
+def descriptor(dtype, flags, extra):
+    node = {"type": TYPE_NAMES.get(dtype, "UNKNOWN_%d" % dtype)}
+    if flags is not None:
+        node["flags"] = flags
+    if extra is not None:
+        node["extra"] = extra
+    return node
 
 
 class KV3Error(Exception):
@@ -132,6 +161,18 @@ class BinaryKV3:
         self.blobs = bytearray()
         self.main = Lanes()
         self.aux = Lanes()
+        self.declared_blob_lengths = []
+        self.declared_block_sizes = []
+        self.blob_frames_used = 0
+        self.buffer1_consumed = 0
+        self.buffer2_consumed = 0
+        self.buffer1_trailing = 0
+        self.buffer2_trailing = 0
+        self.string_count_declared = 0
+        self.string_bytes = 0
+        self.string_bytes_used = 0
+        self.trailer_offset = 0
+        self.trailer = b""
 
     # -- header -----------------------------------------------------------
     def read_header(self):
@@ -142,6 +183,7 @@ class BinaryKV3:
         if magic & 0xFFFFFF00 != 0x4B563300:
             raise KV3Error("not a binary KV3 file (magic %08x)" % magic)
         self.version = magic & 0xFF
+        self.magic = magic
         if not 1 <= self.version <= 5:
             raise KV3Error("unsupported KV3 version %d" % self.version)
         self.guid = d[4:20].hex()
@@ -195,11 +237,13 @@ class BinaryKV3:
         buf1 = bytearray()
         used = lz4_block_decode(d, off, self.size_compressed_buffer1, buf1)
         off += used
+        self.buffer1_consumed = used
         if len(buf1) != self.size_uncompressed_buffer1:
             raise KV3Error("buffer1 size mismatch: %d != %d" % (len(buf1), self.size_uncompressed_buffer1))
         buf2 = bytearray()
         used = lz4_block_decode(d, off, self.size_compressed_buffer2, buf2)
         off += used
+        self.buffer2_consumed = used
         if len(buf2) != self.size_uncompressed_buffer2:
             raise KV3Error("buffer2 size mismatch: %d != %d" % (len(buf2), self.size_uncompressed_buffer2))
         self.blob_data_offset = off
@@ -232,9 +276,13 @@ class BinaryKV3:
         pos = 0
         for _ in range(count):
             end = blob.index(b"\x00", pos)
-            strings.append(blob[pos:end].decode("utf-8", "replace"))
+            strings.append(blob[pos:end].decode("utf-8", "surrogateescape"))
             pos = end + 1
         self.strings = strings
+        self.string_count_declared = count
+        self.string_bytes = len(blob)
+        self.string_bytes_used = pos
+        self.buffer1_trailing = len(buf) - off
 
     def split_buffer2(self, buf):
         off = 0
@@ -261,13 +309,16 @@ class BinaryKV3:
         if self.count_blocks:
             blob_len_bytes = buf[off:off + self.count_blocks * 4]
             self.blob_lengths = list(struct.unpack_from("<%di" % self.count_blocks, blob_len_bytes, 0))
+            self.declared_blob_lengths = list(self.blob_lengths)
             off += self.count_blocks * 4
             trailer = struct.unpack_from("<I", buf, off)[0]
             off += 4
             if trailer != 0xFFEEDD00:
                 raise KV3Error("bad KV3 trailer %08x" % trailer)
             self.block_sizes = list(struct.unpack_from("<%dH" % self.count_blocks, buf, off))
+            self.declared_block_sizes = list(self.block_sizes)
             off += self.count_blocks * 2
+        self.buffer2_trailing = len(buf) - off
 
     def read_blobs(self, off):
         d = self.data
@@ -283,32 +334,86 @@ class BinaryKV3:
                 bi += 1
                 lz4_block_decode(d, off, size, out)
                 off += size
+        self.blob_frames_used = bi
         self.blob_data_end = off
+        self.trailer_offset = off
+        self.trailer = d[off:off + 4]
 
     # -- tree -------------------------------------------------------------
     def read_type(self):
         b = self.types[0]
         del self.types[0]
-        flags = 0
+        flags = extra = None
         if self.version >= 3:
             if b & 0x80:
                 flags = self.types[0]
                 del self.types[0]
             if b & 0x40:
+                extra = self.types[0]
                 del self.types[0]
             b &= 0x3F
         else:
             if b & 0x80:
+                flags = self.types[0]
                 del self.types[0]
             b &= 0x7F
-        return b, flags
+        return b, flags, extra
 
     def get_string(self, sid):
         if 0 <= sid < len(self.strings):
             return self.strings[sid]
-        return ""
+        return None
 
-    def read_value(self, dtype, lane):
+    def read_tree(self):
+        return self.read_node(self.main)
+
+    def read_node(self, lane, declared=None):
+        if declared is None:
+            declared = self.read_type()
+        dtype, flags, extra = declared
+        node = descriptor(dtype, flags, extra)
+        if dtype == OBJECT:
+            n = struct.unpack_from("<i", self.object_lengths, 0)[0]
+            del self.object_lengths[:4]
+            entries = []
+            for _ in range(n):
+                key_id = self.main.take4s()
+                entries.append({
+                    "string_id": key_id,
+                    "key": self.get_string(key_id),
+                    "value": self.read_node(self.main),
+                })
+            node["value"] = entries
+        elif dtype == ARRAY:
+            n = self.main.take4s()
+            node["value"] = [self.read_node(self.main) for _ in range(n)]
+        elif dtype in TYPED_ARRAYS:
+            if dtype == ARRAY_TYPED:
+                n = self.main.take4s()
+                buf = self.main
+            elif dtype == ARRAY_TYPE_BYTE_LENGTH:
+                n = lane.take1()
+                buf = self.main
+            else:
+                n = lane.take1()
+                buf = self.aux
+            sub = self.read_type()
+            node["element"] = descriptor(*sub)
+            node["value"] = [self.read_node(buf, sub) for _ in range(n)]
+        elif dtype == STRING:
+            sid = self.main.take4s()
+            node["string_id"] = sid
+            node["value"] = self.get_string(sid)
+        elif dtype == BINARY_BLOB:
+            length = self.blob_lengths.pop(0)
+            value = bytes(self.blobs[:length])
+            del self.blobs[:length]
+            node["value"] = {"bytes_base64": base64.b64encode(value).decode("ascii")}
+        else:
+            node["value"] = self.read_scalar(dtype, lane)
+        return node
+
+    def read_scalar(self, dtype, lane):
         if dtype == NULL:
             return None
         if dtype == BOOLEAN:
@@ -319,36 +424,6 @@ class BinaryKV3:
             return lane.take8()
         if dtype == DOUBLE:
             return lane.take8f()
-        if dtype == STRING:
-            return self.get_string(self.main.take4s())
-        if dtype == BINARY_BLOB:
-            length = self.blob_lengths.pop(0)
-            value = bytes(self.blobs[:length])
-            del self.blobs[:length]
-            return value
-        if dtype == ARRAY:
-            n = self.main.take4s()
-            return [self.read_member(item=True) for item in range(n)]
-        if dtype == ARRAY_TYPED:
-            n = self.main.take4s()
-            sub, _ = self.read_type()
-            return [self.read_typed(sub, self.main) for _ in range(n)]
-        if dtype == ARRAY_TYPE_BYTE_LENGTH:
-            n = lane.take1()
-            sub, _ = self.read_type()
-            return [self.read_typed(sub, self.main) for _ in range(n)]
-        if dtype == ARRAY_TYPE_AUXILIARY_BUFFER:
-            n = lane.take1()
-            sub, _ = self.read_type()
-            return [self.read_typed(sub, self.aux) for _ in range(n)]
-        if dtype == OBJECT:
-            n = struct.unpack_from("<i", self.object_lengths, 0)[0]
-            del self.object_lengths[:4]
-            out = {}
-            for _ in range(n):
-                name, value = self.read_member(item=False)
-                out[name] = value
-            return out
         if dtype == INT32:
             v = struct.unpack_from("<i", lane.b4, 0)[0]
             lane.take4()
@@ -393,19 +468,131 @@ class BinaryKV3:
             return 1
         raise KV3Error("unknown KV3 node type %d" % dtype)
 
-    def read_typed(self, dtype, lane):
-        return self.read_value(dtype, lane)
 
-    def read_member(self, item):
-        dtype, _flags = self.read_type()
-        if item:
-            return self.read_value(dtype, self.main)
-        name = self.get_string(self.main.take4s())
-        return name, self.read_value(dtype, self.main)
+def legacy_text(text):
+    if text is None:
+        return ""
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return text.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
+    return text
 
-    def read_tree(self):
-        dtype, _flags = self.read_type()
-        return self.read_value(dtype, self.main)
+
+def to_plain(node):
+    dtype = node["type"]
+    value = node.get("value")
+    if dtype == "OBJECT":
+        return {legacy_text(entry["key"]): to_plain(entry["value"]) for entry in value}
+    if dtype == "BINARY_BLOB":
+        return base64.b64decode(value["bytes_base64"])
+    if dtype == "STRING":
+        return legacy_text(value)
+    if dtype.startswith("ARRAY"):
+        return [to_plain(item) for item in value]
+    return value
+
+
+def header_document(kv3):
+    return {
+        "magic": "0x%08X" % kv3.magic,
+        "version": kv3.version,
+        "guid": kv3.guid,
+        "compression": kv3.compression,
+        "dictionary_id": kv3.dictionary_id,
+        "frame_size": kv3.frame_size,
+        "count_bytes1": kv3.count_bytes1,
+        "count_bytes2": kv3.count_bytes2,
+        "count_bytes4": kv3.count_bytes4,
+        "count_bytes8": kv3.count_bytes8,
+        "count_types": kv3.count_types,
+        "count_objects": kv3.count_objects,
+        "count_arrays": kv3.count_arrays,
+        "size_uncompressed_total": kv3.size_uncompressed_total,
+        "size_compressed_total": kv3.size_compressed_total,
+        "count_blocks": kv3.count_blocks,
+        "size_binary_blobs": kv3.size_binary_blobs,
+        "size_block_compressed_sizes": kv3.size_block_compressed_sizes,
+        "size_uncompressed_buffer1": kv3.size_uncompressed_buffer1,
+        "size_compressed_buffer1": kv3.size_compressed_buffer1,
+        "size_uncompressed_buffer2": kv3.size_uncompressed_buffer2,
+        "size_compressed_buffer2": kv3.size_compressed_buffer2,
+        "count_bytes1_buffer2": kv3.count_bytes1_buffer2,
+        "count_bytes2_buffer2": kv3.count_bytes2_buffer2,
+        "count_bytes4_buffer2": kv3.count_bytes4_buffer2,
+        "count_bytes8_buffer2": kv3.count_bytes8_buffer2,
+        "count_nodes": kv3.count_nodes,
+        "count_objects_buffer2": kv3.count_objects_buffer2,
+        "count_arrays_buffer2": kv3.count_arrays_buffer2,
+        "count_array_elements": kv3.count_array_elements,
+        "data_offset": kv3.data_offset,
+    }
+
+
+def payload_document(kv3):
+    return {
+        "string_count": len(kv3.strings),
+        "blob_lengths": kv3.declared_blob_lengths,
+        "blob_frame_sizes": kv3.declared_block_sizes,
+    }
+
+
+def lane_usage(lanes):
+    return {"b1": len(lanes.b1), "b2": len(lanes.b2), "b4": len(lanes.b4), "b8": len(lanes.b8)}
+
+
+def completeness(kv3):
+    return {
+        "file_size": len(kv3.data),
+        "header_bytes": kv3.data_offset,
+        "buffer1": {
+            "declared_compressed": kv3.size_compressed_buffer1,
+            "consumed_compressed": kv3.buffer1_consumed,
+            "declared_uncompressed": kv3.size_uncompressed_buffer1,
+            "trailing_bytes": kv3.buffer1_trailing,
+        },
+        "buffer2": {
+            "declared_compressed": kv3.size_compressed_buffer2,
+            "consumed_compressed": kv3.buffer2_consumed,
+            "declared_uncompressed": kv3.size_uncompressed_buffer2,
+            "trailing_bytes": kv3.buffer2_trailing,
+        },
+        "string_table": {
+            "declared": kv3.string_count_declared,
+            "parsed": len(kv3.strings),
+            "buffer_bytes": kv3.string_bytes,
+            "used_bytes": kv3.string_bytes_used,
+        },
+        "blob_frames": {
+            "declared": len(kv3.declared_block_sizes),
+            "consumed": kv3.blob_frames_used,
+        },
+        "blob_bytes": kv3.blob_data_end - kv3.blob_data_offset,
+        "trailer": {
+            "offset": kv3.trailer_offset,
+            "bytes_hex": kv3.trailer.hex(),
+            "matches_marker": len(kv3.trailer) == 4 and struct.unpack("<I", kv3.trailer)[0] == 0xFFEEDD00,
+        },
+        "trailing_bytes": len(kv3.data) - kv3.trailer_offset - len(kv3.trailer),
+        "unconsumed": {
+            "type_bytes": len(kv3.types),
+            "object_lengths": len(kv3.object_lengths),
+            "blob_lengths": len(kv3.blob_lengths),
+            "blob_bytes": len(kv3.blobs),
+            "main_lanes": lane_usage(kv3.main),
+            "aux_lanes": lane_usage(kv3.aux),
+        },
+    }
+
+
+def document(kv3, tree):
+    return {
+        "header": header_document(kv3),
+        "payload": payload_document(kv3),
+        "strings": kv3.strings,
+        "tree": tree,
+        "completeness": completeness(kv3),
+    }
 
 
 def decode(path):
@@ -535,13 +722,14 @@ def main():
     ap = argparse.ArgumentParser(description="Decode binary KeyValues3 into JSON")
     ap.add_argument("path")
     ap.add_argument("--out")
+    ap.add_argument("--plain", action="store_true", help="legacy compact tree without types, flags or header")
     ap.add_argument("--strings-only", action="store_true")
     ap.add_argument("--builds", action="store_true", help="summarise the saved hero builds")
     ap.add_argument("--self-test", action="store_true", help="check the decoder against the build cache")
     args = ap.parse_args()
     kv3 = decode(args.path)
     if args.self_test:
-        self_test(kv3, kv3.read_tree())
+        self_test(kv3, to_plain(kv3.read_tree()))
         return
     if args.strings_only:
         for i, s in enumerate(kv3.strings):
@@ -549,10 +737,12 @@ def main():
         return
     tree = kv3.read_tree()
     if args.builds:
-        text = json.dumps(build_summary(kv3, tree), indent=2, ensure_ascii=False)
-    else:
-        text = json.dumps(tree, indent=2, ensure_ascii=False,
+        text = json.dumps(build_summary(kv3, to_plain(tree)), indent=2, ensure_ascii=False)
+    elif args.plain:
+        text = json.dumps(to_plain(tree), indent=2, ensure_ascii=False,
                           default=lambda b: {"bytes_base64": base64.b64encode(b).decode()})
+    else:
+        text = json.dumps(document(kv3, tree), indent=2, ensure_ascii=True)
     if args.out:
         pathlib.Path(args.out).write_text(text, encoding="utf-8")
     else:
