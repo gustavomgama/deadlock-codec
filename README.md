@@ -41,4 +41,15 @@ python python/validate_build.py <build.json-or-CODE>
 python python/verify_build.py <build.json-or-CODE>
 python python/build_from_json.py <build.json>
 python python/decode_kv3.py <cached_hero_builds.kv3>
+```
+
+## Example
+
+A real in-game build code is included at `data/examplecodefromgame.md` (Apollo, "Copy of [Default Apollo Build]").
+
+```sh
+# bash
+python python/decode_build_code.py "$(cat data/examplecodefromgame.md)"
+# PowerShell
+python python/decode_build_code.py (Get-Content data/examplecodefromgame.md)
 ```
