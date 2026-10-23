@@ -1,8 +1,14 @@
-import base64, struct, sys, json
+import base64, json, struct, sys
+
+_ZSTD_MAGIC = b'\x28\xb5\x2f\xfd'
+_ZSTD_DECOMPRESSOR = None
+_DEFAULT_BUILD_HERO_OFFSET = 1000
+
 
 def read_varint(data, i):
     res = 0; shift = 0
-    while i < len(data):
+    n = len(data)
+    while i < n:
         byte = data[i]; i += 1
         res |= (byte & 0x7f) << shift
         if not (byte & 0x80):
@@ -10,43 +16,68 @@ def read_varint(data, i):
         shift += 7
     return res, i
 
+
 def parse_message(data):
     """Parse protobuf bytes into list of (field_number, wire_type, value)."""
     out = []
-    i = 0; n = len(data)
+    append = out.append
+    read = read_varint
+    i = 0
+    n = len(data)
     while i < n:
-        tag, i = read_varint(data, i)
+        tag = data[i]
+        if tag < 0x80:
+            i += 1
+        else:
+            tag, i = read(data, i)
         if tag == 0:
             break
         field = tag >> 3
         wire = tag & 7
-        if wire == 0:
-            val, i = read_varint(data, i)
-            out.append((field, wire, val))
-        elif wire == 1:
-            val = struct.unpack('<d', data[i:i+8])[0]; i += 8
-            out.append((field, wire, val))
+        if wire == 2:
+            if i < n:
+                length = data[i]
+                if length < 0x80:
+                    i += 1
+                else:
+                    length, i = read(data, i)
+            else:
+                length = 0
+            end = i + length
+            chunk = data[i:end]
+            i = end
+            try:
+                text = chunk.decode('utf-8')
+            except UnicodeDecodeError:
+                text = None
+            if text is not None and (text.isprintable() or not text
+                                     or text.replace('\n', '').replace('\r', '').replace('\t', '').isprintable()):
+                append((field, wire, ('str', text)))
+                continue
+            try:
+                append((field, wire, ('msg', parse_message(chunk))))
+            except Exception:
+                append((field, wire, ('bytes', chunk)))
+        elif wire == 0:
+            if i < n:
+                value = data[i]
+                if value < 0x80:
+                    i += 1
+                else:
+                    value, i = read(data, i)
+            else:
+                value = 0
+            append((field, wire, value))
         elif wire == 5:
-            val = struct.unpack('<f', data[i:i+4])[0]; i += 4
-            out.append((field, wire, val))
-        elif wire == 2:
-            length, i = read_varint(data, i)
-            chunk = data[i:i+length]; i += length
-            # try string
-            try:
-                s = chunk.decode('utf-8')
-                if all(c.isprintable() or c in '\n\r\t' for c in s):
-                    out.append((field, wire, ('str', s)))
-                    continue
-            except Exception:
-                pass
-            try:
-                out.append((field, wire, ('msg', parse_message(chunk))))
-            except Exception:
-                out.append((field, wire, ('bytes', chunk)))
+            append((field, wire, struct.unpack('<f', data[i:i+4])[0]))
+            i += 4
+        elif wire == 1:
+            append((field, wire, struct.unpack('<d', data[i:i+8])[0]))
+            i += 8
         else:
             break
     return out
+
 
 def get_str(fields, num):
     for f, w, v in fields:
@@ -54,17 +85,20 @@ def get_str(fields, num):
             return v[1]
     return None
 
+
 def get_int(fields, num):
     for f, w, v in fields:
         if f == num and not isinstance(v, tuple):
             return v
     return None
 
+
 def get_float(fields, num):
     for f, w, v in fields:
         if f == num and isinstance(v, float):
             return v
     return None
+
 
 def get_msgs(fields, num):
     res = []
@@ -73,35 +107,36 @@ def get_msgs(fields, num):
             res.append(v[1])
     return res
 
+
+def _decompress(raw):
+    global _ZSTD_DECOMPRESSOR
+    if _ZSTD_DECOMPRESSOR is None:
+        import zstandard
+        _ZSTD_DECOMPRESSOR = zstandard.ZstdDecompressor()
+    return _ZSTD_DECOMPRESSOR.decompress(raw)
+
+
 def decode_build_code(code):
     code = ''.join(code.split())
-    # try standard then url-safe
-    raw = None
-    for alt in (None, '-_'):
+    try:
+        raw = base64.b64decode(code, validate=True)
+    except Exception:
         try:
-            if alt is None:
-                raw = base64.b64decode(code, validate=True)
-            else:
-                raw = base64.urlsafe_b64decode(code + '=' * (-len(code) % 4))
-            break
+            raw = base64.urlsafe_b64decode(code + '=' * (-len(code) % 4))
         except Exception:
             raw = None
     if raw is None:
         raise ValueError('invalid base64')
-    # zstd?
-    if raw[:4] == b'\x28\xb5\x2f\xfd':
+    if raw[:4] == _ZSTD_MAGIC:
         try:
-            import zstandard
-            raw = zstandard.ZstdDecompressor().decompress(raw)
+            raw = _decompress(raw)
         except Exception as e:
-            # maybe zstandard not installed; try zstd cli? skip
             raise ValueError('zstd decompress failed: %s' % e)
     top = parse_message(raw)
     hero_id = get_int(top, 1)
-    # Default Valve builds store 1000 + hero in field 1 (e.g. 1001 = Infernus).
-    is_default_build = bool(hero_id is not None and hero_id >= 1000)
+    is_default_build = bool(hero_id is not None and hero_id >= _DEFAULT_BUILD_HERO_OFFSET)
     if is_default_build:
-        resolved_hero_id = hero_id - 1000
+        resolved_hero_id = hero_id - _DEFAULT_BUILD_HERO_OFFSET
     else:
         resolved_hero_id = hero_id
     version = get_int(top, 2)
@@ -117,7 +152,6 @@ def decode_build_code(code):
     for f, w, v in top:
         if f == 11 and not isinstance(v, tuple):
             tags.append(v)
-    # details is field 10
     details = None
     for f, w, v in top:
         if f == 10 and isinstance(v, tuple) and v[0] == 'msg':
@@ -131,7 +165,6 @@ def decode_build_code(code):
                 aid = get_int(m, 1)
                 if aid is not None:
                     mods.append(aid)
-            # also mods could be direct varints? handle repeated field 1 varints
             for f, w, v in cat_msg:
                 if f == 1 and not isinstance(v, tuple):
                     mods.append(v)
@@ -145,13 +178,11 @@ def decode_build_code(code):
             if any(f == 6 and not isinstance(v, tuple) and v for f, w, v in cat_msg):
                 cat['optional'] = True
             mod_categories.append(cat)
-        # ability_order: field 2 of details?
         for f, w, v in details:
             if f == 2 and isinstance(v, tuple) and v[0] == 'msg':
                 ability_order = v[1]
     ability_changes = []
     if ability_order is not None:
-        # currency_changes repeated field 1
         for cc in get_msgs(ability_order, 1):
             raw_delta = get_int(cc, 3)
             if raw_delta is not None and raw_delta >= (1 << 63):
@@ -162,7 +193,7 @@ def decode_build_code(code):
                 'delta': raw_delta,
                 'annotation': get_str(cc, 4),
             })
-    result = {
+    return {
         'hero_id': hero_id,
         'hero': resolved_hero_id,
         'is_default_build': is_default_build,
@@ -181,7 +212,7 @@ def decode_build_code(code):
             'ability_order': {'currency_changes': ability_changes} if ability_changes else None,
         },
     }
-    return result
+
 
 def main():
     if len(sys.argv) < 2:
@@ -191,7 +222,6 @@ def main():
     if arg == "-":
         code = sys.stdin.read()
     else:
-        # if arg points to a file, read it
         try:
             with open(arg, 'r', encoding='utf-8') as fh:
                 code = fh.read()
@@ -209,6 +239,7 @@ def main():
     except Exception as e:
         print('ERROR: %s' % e, file=sys.stderr)
         sys.exit(1)
+
 
 if __name__ == '__main__':
     main()
