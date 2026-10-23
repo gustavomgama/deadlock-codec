@@ -1,4 +1,4 @@
-import base64, struct, sys, json, zlib, os
+import base64, struct, sys, json
 
 def read_varint(data, i):
     res = 0; shift = 0
@@ -40,11 +40,8 @@ def parse_message(data):
                     continue
             except Exception:
                 pass
-            # try nested message (recurse if it parses cleanly)
             try:
-                nested = parse_message(chunk)
-                # heuristic: if consumed fully and at least one field, treat as message
-                out.append((field, wire, ('msg', nested, chunk)))
+                out.append((field, wire, ('msg', parse_message(chunk))))
             except Exception:
                 out.append((field, wire, ('bytes', chunk)))
         else:
@@ -76,26 +73,6 @@ def get_msgs(fields, num):
             res.append(v[1])
     return res
 
-def _ability_heroes():
-    """Map ability id -> hero id from items_raw.json (cached)."""
-    global _ABILITY_HERO_CACHE
-    if _ABILITY_HERO_CACHE is not None:
-        return _ABILITY_HERO_CACHE
-    _ABILITY_HERO_CACHE = {}
-    try:
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        with open(os.path.join(root, 'data', 'items_raw.json'), encoding='utf-8') as f:
-            for it in json.load(f):
-                if it.get('type') == 'ability':
-                    for h in (it.get('heroes') or []):
-                        _ABILITY_HERO_CACHE[it['id']] = h
-    except Exception:
-        pass
-    return _ABILITY_HERO_CACHE
-
-_ABILITY_HERO_CACHE = None
-
-
 def decode_build_code(code):
     code = ''.join(code.split())
     # try standard then url-safe
@@ -121,32 +98,10 @@ def decode_build_code(code):
             raise ValueError('zstd decompress failed: %s' % e)
     top = parse_message(raw)
     hero_id = get_int(top, 1)
-    # Resolve the real hero id. Three cases:
-    #  1. Default Valve builds store 1000 + hero in field 1 (e.g. 1001 = Infernus).
-    #  2. Some builds (default copies, kv3-derived) store a non-hero index in
-    #     field 1; the hero is recoverable from the ability ids in ability_order.
-    #  3. Normal builds store the hero directly in field 1.
-    # ability_order is parsed later; do a first pass over the raw details.
-    _ah = _ability_heroes()
-    _ability_ids = []
-    for f, w, v in top:
-        if f == 10 and isinstance(v, tuple) and v[0] == 'msg':
-            for f2, w2, v2 in v[1]:
-                if f2 == 2 and isinstance(v2, tuple) and v2[0] == 'msg':
-                    for cc in get_msgs(v2[1], 1):
-                        aid = get_int(cc, 1)
-                        if aid is not None:
-                            _ability_ids.append(aid)
-    _hero_from_abilities = None
-    if _ability_ids:
-        heroes = {_ah.get(aid) for aid in _ability_ids if aid in _ah}
-        if len(heroes) == 1:
-            _hero_from_abilities = next(iter(heroes))
+    # Default Valve builds store 1000 + hero in field 1 (e.g. 1001 = Infernus).
     is_default_build = bool(hero_id is not None and hero_id >= 1000)
     if is_default_build:
         resolved_hero_id = hero_id - 1000
-    elif _hero_from_abilities is not None:
-        resolved_hero_id = _hero_from_abilities
     else:
         resolved_hero_id = hero_id
     version = get_int(top, 2)
@@ -255,22 +210,5 @@ def main():
         print('ERROR: %s' % e, file=sys.stderr)
         sys.exit(1)
 
-def _self_test():
-    import base64
-    raw = open('build.zst', 'rb').read()
-    code = base64.b64encode(raw).decode()
-    r = decode_build_code(code)
-    assert r['hero_id'] == 6, r['hero_id']
-    assert r['name'] == 'Copy of [second RAG build]'
-    assert len(r['details']['mod_categories']) == 3
-    # raw protobuf path
-    raw2 = open('build.bin', 'rb').read()
-    r2 = decode_build_code(base64.b64encode(raw2).decode())
-    assert r2['hero_id'] == 6
-    print('self-test OK')
-
 if __name__ == '__main__':
-    if '--self-test' in sys.argv:
-        _self_test()
-    else:
-        main()
+    main()

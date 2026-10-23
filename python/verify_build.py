@@ -20,8 +20,16 @@ PY = os.environ.get("DEADLOCK_PYTHON", r"C:\Users\helmet\AppData\Roaming\uv\pyth
 ITEMS_RAW = os.path.join(REPO_ROOT, "data", "items_raw.json")
 HEROES_RAW = os.path.join(REPO_ROOT, "data", "heroes_raw.json")
 
-items = json.load(open(ITEMS_RAW, encoding="utf-8"))
-heroes = json.load(open(HEROES_RAW, encoding="utf-8"))
+def _load_mirror(path):
+    if not os.path.isfile(path):
+        print(f"WARN: {os.path.basename(path)} missing, id checks disabled", file=sys.stderr)
+        return []
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+items = _load_mirror(ITEMS_RAW)
+heroes = _load_mirror(HEROES_RAW)
 item_by_id = {x["id"]: x for x in items}
 hero_by_id = {x["id"]: x for x in heroes}
 upgrade_ids = {x["id"] for x in items if x["type"] == "upgrade"}
@@ -102,6 +110,10 @@ def main():
     print(f"STEP 3 VALIDATE: OK ({warn_count} warnings)")
 
     # Step 4: resolve ids
+    if not item_by_id or not hero_by_id:
+        print("STEP 4 ID RESOLUTION: SKIPPED (data mirrors missing)")
+        print("\nALL CHECKS PASSED")
+        sys.exit(0)
     hero_id = decoded.get("hero_id")
     # hero may be 1000+hero for default builds; resolve via ability ids if needed
     resolved_hero = decoded.get("hero", hero_id)

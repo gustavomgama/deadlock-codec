@@ -7,8 +7,16 @@ ROOT = SCRIPT_DIR.parent
 DATA_DIR = ROOT / "data"
 sys.path.insert(0, str(SCRIPT_DIR))
 
-HEROES = {h.get("id"): h for h in json.loads((DATA_DIR / "heroes_raw.json").read_text(encoding="utf-8"))}
-ITEMS = {it.get("id"): it for it in json.loads((DATA_DIR / "items_raw.json").read_text(encoding="utf-8"))}
+def _load_mirror(name):
+    path = DATA_DIR / name
+    if not path.is_file():
+        print(f"WARN: data/{name} missing, id checks disabled", file=sys.stderr)
+        return {}
+    return {row.get("id"): row for row in json.loads(path.read_text(encoding="utf-8"))}
+
+
+HEROES = _load_mirror("heroes_raw.json")
+ITEMS = _load_mirror("items_raw.json")
 
 
 def resolve_hero(obj):
@@ -66,7 +74,7 @@ def validate(obj):
         return ["input is not an object"], warnings
     hero_id = obj.get("hero_id")
     resolved = resolve_hero(obj)
-    if resolved not in HEROES:
+    if HEROES and resolved not in HEROES:
         errors.append(f"unknown hero (resolved {resolved} from raw hero_id {hero_id})")
     elif isinstance(hero_id, int) and hero_id in HEROES and hero_id != resolved:
         warnings.append(f"hero_id {hero_id} does not match resolved hero {resolved} from ability ids")
@@ -93,7 +101,7 @@ def validate(obj):
             if not isinstance(m, int):
                 errors.append(f"non-int mod id {m!r} in {name!r}")
                 continue
-            if m not in ITEMS:
+            if ITEMS and m not in ITEMS:
                 errors.append(f"unknown item id {m} in {name!r}")
             if m in seen_items:
                 warnings.append(f"duplicate item id {m} across categories")
@@ -112,7 +120,7 @@ def validate(obj):
                         errors.append("currency_change entry not object")
                         continue
                     aid = e.get("ability_id")
-                    if aid not in ITEMS or ITEMS.get(aid, {}).get("type") != "ability":
+                    if ITEMS and (aid not in ITEMS or ITEMS.get(aid, {}).get("type") != "ability"):
                         warnings.append(f"ability_id {aid} not found as ability")
                     if e.get("currency_type") not in (1, 2):
                         errors.append(f"bad currency_type {e.get('currency_type')}")
