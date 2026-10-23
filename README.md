@@ -43,6 +43,8 @@ python python/build_from_json.py <build.json>
 python python/decode_kv3.py <cached_hero_builds.kv3>
 ```
 
+Legacy one-off debug scripts are in `python/legacy/`.
+
 ## Example
 
 A real in-game build code is included at `data/examplecodefromgame.md` (Apollo, "Copy of [Default Apollo Build]").
