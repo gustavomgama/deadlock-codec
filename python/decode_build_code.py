@@ -108,6 +108,27 @@ def get_msgs(fields, num):
     return res
 
 
+_WIRE_NAMES = {0: "varint", 1: "fixed64", 2: "bytes", 5: "fixed32"}
+
+
+def _raw_fields(fields):
+    out = []
+    for field, wire, value in fields:
+        node = {"field": field, "wire": wire, "wire_type": _WIRE_NAMES.get(wire, str(wire))}
+        if isinstance(value, tuple):
+            kind, payload = value
+            if kind == "str":
+                node["text"] = payload
+            elif kind == "msg":
+                node["message"] = _raw_fields(payload)
+            else:
+                node["bytes_base64"] = base64.b64encode(payload).decode("ascii")
+        else:
+            node["value"] = value
+        out.append(node)
+    return out
+
+
 def _decompress(raw):
     global _ZSTD_DECOMPRESSOR
     if _ZSTD_DECOMPRESSOR is None:
@@ -116,7 +137,7 @@ def _decompress(raw):
     return _ZSTD_DECOMPRESSOR.decompress(raw)
 
 
-def decode_build_code(code):
+def _payload(code):
     code = ''.join(code.split())
     try:
         raw = base64.b64decode(code, validate=True)
@@ -127,11 +148,18 @@ def decode_build_code(code):
             raw = None
     if raw is None:
         raise ValueError('invalid base64')
-    if raw[:4] == _ZSTD_MAGIC:
+    compressed = raw[:4] == _ZSTD_MAGIC
+    stored = len(raw)
+    if compressed:
         try:
             raw = _decompress(raw)
         except Exception as e:
             raise ValueError('zstd decompress failed: %s' % e)
+    return raw, compressed, stored
+
+
+def decode_build_code(code):
+    raw, _, _ = _payload(code)
     top = parse_message(raw)
     hero_field = 1
     nested = get_msgs(top, 1)
@@ -221,11 +249,26 @@ def decode_build_code(code):
     }
 
 
+def raw_document(code):
+    raw, compressed, stored = _payload(code)
+    return {
+        'input': {
+            'base64_chars': len(''.join(code.split())),
+            'stored_bytes': stored,
+            'zstd': compressed,
+            'decoded_bytes': len(raw),
+        },
+        'tree': _raw_fields(parse_message(raw)),
+    }
+
+
 def main():
-    if len(sys.argv) < 2:
-        print('usage: decode_build_code.py <base64-code-or-file>', file=sys.stderr)
+    raw_mode = '--raw' in sys.argv[1:]
+    argv = [a for a in sys.argv[1:] if a != '--raw']
+    if not argv:
+        print('usage: decode_build_code.py <base64-code-or-file> [--raw]', file=sys.stderr)
         sys.exit(1)
-    arg = sys.argv[1]
+    arg = argv[0]
     if arg == "-":
         code = sys.stdin.read()
     else:
@@ -241,8 +284,10 @@ def main():
         except OSError:
             code = arg
     try:
-        res = decode_build_code(code)
-        print(json.dumps(res, indent=2))
+        if raw_mode:
+            print(json.dumps(raw_document(code), indent=2, ensure_ascii=True))
+        else:
+            print(json.dumps(decode_build_code(code), indent=2))
     except Exception as e:
         print('ERROR: %s' % e, file=sys.stderr)
         sys.exit(1)
