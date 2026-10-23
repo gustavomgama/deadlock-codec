@@ -33,14 +33,76 @@ encoded = DeadlockCodec.encode(hash)
 
 ## Python scripts
 
+Python 3.9+. `decode_build_code.py` imports `zstandard` only for zstd-compressed
+codes (`pip install zstandard`). Commands below run from the repository root.
+
+### decode_build_code.py
+
+Decodes a base64 build code (standard or URL-safe, optionally zstd-compressed)
+into JSON.
+
+```sh
+python python/decode_build_code.py <CODE>
+python python/decode_build_code.py data/examplecodefromgame.md
+Get-Content data/examplecodefromgame.md -Raw | python python/decode_build_code.py -
+```
+
+Output (abridged):
+
+```json
+{
+  "hero_id": 1034,
+  "hero": 34,
+  "is_default_build": true,
+  "version": 77,
+  "name": "Copy of [Default Apollo Build]",
+  "description": "#Citadel_HeroBuilds_DefaultHeroBuildDesc",
+  "tags": [1150155374, 147493976, 36498494],
+  "details": {"mod_categories": ["..."], "ability_order": {"currency_changes": ["..."]}}
+}
+```
+
+`hero_id` is the raw field 1 value and `hero` the resolved hero id, because
+Valve default builds store `1000 + hero` (`is_default_build`). Invalid input
+prints `ERROR: ...` to stderr and exits 1.
+
+### decode_kv3.py
+
+Decodes the client's binary KeyValues3 v5 build cache (LZ4) into JSON. The
+client writes it to
+`%LOCALAPPDATA%/../Steam/userdata/<id>/1422450/remote/cfg/cached_hero_builds.kv3`;
+a copy is committed at `data/cached_hero_builds.kv3`.
+
+```sh
+python python/decode_kv3.py data/cached_hero_builds.kv3
+python python/decode_kv3.py data/cached_hero_builds.kv3 --out cached.json
+python python/decode_kv3.py data/cached_hero_builds.kv3 --builds
+python python/decode_kv3.py data/cached_hero_builds.kv3 --self-test
+```
+
+| Flag | Output |
+| --- | --- |
+| *(none)* | Lossless document: `header`, `payload`, `strings`, typed `tree`, `completeness` |
+| `--plain` | Old compact tree of plain values (no types, flags or header) |
+| `--builds` | Summary of the saved hero builds, decoded through `decode_build_code.py` |
+| `--strings-only` | The string table, one `id<TAB>string` per line |
+| `--self-test` | Asserts the file shape and prints `SELF_TEST_OK` |
+| `--out FILE` | Write to a file instead of stdout |
+
+The default document keeps every node's KV3 type, flags, duplicate object keys
+and string ids, and its `completeness` block accounts for every byte: header,
+both compressed buffers, string table, blob frames, the trailing `0xFFEEDD00`
+marker, plus anything left unconsumed. `--plain` output is byte-identical to
+the previous decoder, and `--builds`/`--self-test` run on top of it.
+
+### Other scripts
+
 ```sh
 python python/encode_build_code.py build.json
-python python/decode_build_code.py <CODE>
 python python/reencode_build_code.py <CODE-or-file>
 python python/validate_build.py <build.json-or-CODE>
 python python/verify_build.py <build.json-or-CODE>
 python python/build_from_json.py <build.json>
-python python/decode_kv3.py <cached_hero_builds.kv3>
 ```
 
 Legacy one-off debug scripts are in `python/legacy/`.
