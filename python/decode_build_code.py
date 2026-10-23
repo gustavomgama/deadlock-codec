@@ -133,7 +133,12 @@ def decode_build_code(code):
         except Exception as e:
             raise ValueError('zstd decompress failed: %s' % e)
     top = parse_message(raw)
-    hero_id = get_int(top, 1)
+    hero_field = 1
+    nested = get_msgs(top, 1)
+    if get_int(top, 1) is None and nested:
+        top = nested[0]
+        hero_field = 2
+    hero_id = get_int(top, hero_field)
     is_default_build = bool(hero_id is not None and hero_id >= _DEFAULT_BUILD_HERO_OFFSET)
     if is_default_build:
         resolved_hero_id = hero_id - _DEFAULT_BUILD_HERO_OFFSET
@@ -141,6 +146,8 @@ def decode_build_code(code):
         resolved_hero_id = hero_id
     version = get_int(top, 2)
     hero_build_id = get_int(top, 3)
+    if hero_field == 2:
+        hero_build_id = get_int(top, 1)
     author_account_id = get_int(top, 4)
     name = get_str(top, 5)
     description = get_str(top, 6)
