@@ -1,4 +1,0 @@
-source "https://rubygems.org"
-
-gem "zstd-ruby", "~> 2.0"
-gem "base64"
