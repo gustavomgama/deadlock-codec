@@ -1,0 +1,950 @@
+{
+  "schema_version": 1,
+  "input": {
+    "base64": "KLUv/WD3AWUMABQSCIoIEE0YACCtwK7MBioeQ29weSBvZiBbRGVmYXVsdCBBcG9sbG8gQnVpbGRdMigjQ2l0YWRlbF9IZXJvc19EZXNjOABAAEgAUocFCmcKCgiquZqABRIAIGMKBgijiIa2D/WN87gH1OWqrgWZjdDNA5vauOUO5MTmvAESHUVhcmx5R2FtZRoAJQCAI0QtAAArQwppCgUIpZzEmIe0nwGn28GNBILP09kJqOWp/QoKDwjczMq1AQAo2KiqRpWjsvMHEhtNaWQAKWKdkZMM9oeotMGNuLEJraShor+1rusBsryB2QaVguqjARIcTGF0ZUArEswCChMIre/j2QIQAhj/AQoSCAHW3/O8BwH+vZvO6wH7AQH7/lju9LekBFhYvtizETAosETEaA+BISGIEQkkoFAkPQZDItY6wP8COK72NU+BB+gsMCZJl6azqgfUcuIG+Io6s167P9xIE8TUq50mu0EPeuokNIlHu/5i2CUDzoavmPBxuprRHd/RaNDT07jemH0dA9cFMyoHCg==",
+    "base64_chars": 544,
+    "stored_bytes": 406,
+    "zstd": true,
+    "decoded_bytes": 759,
+    "payload_base64": "CIoIEE0YACCtwK7MBioeQ29weSBvZiBbRGVmYXVsdCBBcG9sbG8gQnVpbGRdMigjQ2l0YWRlbF9IZXJvQnVpbGRzX0RlZmF1bHRIZXJvQnVpbGREZXNjOABAAEgAUocFCmcKCgiquZqABRIAIGMKBgijiIa2DwoGCPWN87gHCgYI1OWqrgUKBgiZjdDNAwoGCJvauOUOCgYI5MTmvAESHSNDaXRhZGVsX0hlcm9CdWlsZHNfRWFybHlHYW1lGgAlAIAjRC0AACtDCmkKBQilnMQDCgYImIe0nwEKBgin28GNBAoGCILP09kJCgYIqOWp/QoKDwjczMq1ARIAIAAo2KiqRgoGCJWjsvMHEhsjQ2l0YWRlbF9IZXJvQnVpbGRzX01pZEdhbWUaACUAAClELQAAK0MKYgoGCNSdkZMMCgYI9oeotAMKBgjBjbixCQoGCK2koaIFCgYIv7Wu6wEKBgiyvIHZBgoGCJWC6qMBEhwjQ2l0YWRlbF9IZXJvQnVpbGRzX0xhdGVHYW1lGgAlAEArRC0AACtDEswCChMIre/j2QIQAhj///////////8BChII2KiqRhACGP///////////wEKEwit7+PZAhABGP///////////wEKEwjW3/O8BxACGP///////////wEKEgjYqKpGEAEY////////////AQoSCNioqkYQARj+//////////8BChMIvZvO6wEQAhj///////////8BChII2KiqRhABGPv//////////wEKEwjW3/O8BxABGP///////////wEKEwit7+PZAhABGP7//////////wEKEwi9m87rARABGP///////////wEKEwi9m87rARABGP7//////////wEKEwi9m87rARABGPv//////////wEKEwit7+PZAhABGPv//////////wEKEwjW3/O8BxABGP7//////////wEKEwjW3/O8BxABGPv//////////wFY7vS3pARY2KiqRli+2LMR",
+    "base64_alphabet": "standard",
+    "base64_padding_added": false
+  },
+  "issues": [],
+  "tree": [
+    {
+      "field": 1,
+      "wire": 0,
+      "wire_type": "varint",
+      "value": 1034
+    },
+    {
+      "field": 2,
+      "wire": 0,
+      "wire_type": "varint",
+      "value": 77
+    },
+    {
+      "field": 3,
+      "wire": 0,
+      "wire_type": "varint",
+      "value": 0
+    },
+    {
+      "field": 4,
+      "wire": 0,
+      "wire_type": "varint",
+      "value": 1770758189
+    },
+    {
+      "field": 5,
+      "wire": 2,
+      "wire_type": "bytes",
+      "length": 30,
+      "text": "Copy of [Default Apollo Build]"
+    },
+    {
+      "field": 6,
+      "wire": 2,
+      "wire_type": "bytes",
+      "length": 40,
+      "text": "#Citadel_HeroBuilds_DefaultHeroBuildDesc"
+    },
+    {
+      "field": 7,
+      "wire": 0,
+      "wire_type": "varint",
+      "value": 0
+    },
+    {
+      "field": 8,
+      "wire": 0,
+      "wire_type": "varint",
+      "value": 0
+    },
+    {
+      "field": 9,
+      "wire": 0,
+      "wire_type": "varint",
+      "value": 0
+    },
+    {
+      "field": 10,
+      "wire": 2,
+      "wire_type": "bytes",
+      "length": 4,
+      "message": [
+        {
+          "field": 1,
+          "wire": 2,
+          "wire_type": "bytes",
+          "length": 11,
+          "message": [
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 3,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 1342610602
+                },
+                {
+                  "field": 2,
+                  "wire": 2,
+                  "wire_type": "bytes",
+                  "length": 0,
+                  "text": ""
+                },
+                {
+                  "field": 4,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 99
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 4139877411
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 1998374645
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 1439347412
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 968099481
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 3970837787
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 395944548
+                }
+              ]
+            },
+            {
+              "field": 2,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 29,
+              "text": "#Citadel_HeroBuilds_EarlyGame"
+            },
+            {
+              "field": 3,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 0,
+              "text": ""
+            },
+            {
+              "field": 4,
+              "wire": 5,
+              "wire_type": "fixed32",
+              "value": 654.0
+            },
+            {
+              "field": 5,
+              "wire": 5,
+              "wire_type": "fixed32",
+              "value": 171.0
+            }
+          ]
+        },
+        {
+          "field": 1,
+          "wire": 2,
+          "wire_type": "bytes",
+          "length": 11,
+          "message": [
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 7409189
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 334300056
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 1102081447
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 2603935618
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 2947183272
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 4,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 380806748
+                },
+                {
+                  "field": 2,
+                  "wire": 2,
+                  "wire_type": "bytes",
+                  "length": 0,
+                  "text": ""
+                },
+                {
+                  "field": 4,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 0
+                },
+                {
+                  "field": 5,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 147493976
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 2121044373
+                }
+              ]
+            },
+            {
+              "field": 2,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 27,
+              "text": "#Citadel_HeroBuilds_MidGame"
+            },
+            {
+              "field": 3,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 0,
+              "text": ""
+            },
+            {
+              "field": 4,
+              "wire": 5,
+              "wire_type": "fixed32",
+              "value": 676.0
+            },
+            {
+              "field": 5,
+              "wire": 5,
+              "wire_type": "fixed32",
+              "value": 171.0
+            }
+          ]
+        },
+        {
+          "field": 1,
+          "wire": 2,
+          "wire_type": "bytes",
+          "length": 11,
+          "message": [
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 3261353684
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 915014646
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 2519598785
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 1414025773
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 493591231
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 1797283378
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 1,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 343572757
+                }
+              ]
+            },
+            {
+              "field": 2,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 28,
+              "text": "#Citadel_HeroBuilds_LateGame"
+            },
+            {
+              "field": 3,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 0,
+              "text": ""
+            },
+            {
+              "field": 4,
+              "wire": 5,
+              "wire_type": "fixed32",
+              "value": 685.0
+            },
+            {
+              "field": 5,
+              "wire": 5,
+              "wire_type": "fixed32",
+              "value": 171.0
+            }
+          ]
+        },
+        {
+          "field": 2,
+          "wire": 2,
+          "wire_type": "bytes",
+          "length": 16,
+          "message": [
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 3,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 725153709
+                },
+                {
+                  "field": 2,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 2
+                },
+                {
+                  "field": 3,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 18446744073709551615
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 3,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 147493976
+                },
+                {
+                  "field": 2,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 2
+                },
+                {
+                  "field": 3,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 18446744073709551615
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 3,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 725153709
+                },
+                {
+                  "field": 2,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 1
+                },
+                {
+                  "field": 3,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 18446744073709551615
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 3,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 2006773718
+                },
+                {
+                  "field": 2,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 2
+                },
+                {
+                  "field": 3,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 18446744073709551615
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 3,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 147493976
+                },
+                {
+                  "field": 2,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 1
+                },
+                {
+                  "field": 3,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 18446744073709551615
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 3,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 147493976
+                },
+                {
+                  "field": 2,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 1
+                },
+                {
+                  "field": 3,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 18446744073709551614
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 3,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 494112189
+                },
+                {
+                  "field": 2,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 2
+                },
+                {
+                  "field": 3,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 18446744073709551615
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 3,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 147493976
+                },
+                {
+                  "field": 2,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 1
+                },
+                {
+                  "field": 3,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 18446744073709551611
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 3,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 2006773718
+                },
+                {
+                  "field": 2,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 1
+                },
+                {
+                  "field": 3,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 18446744073709551615
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 3,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 725153709
+                },
+                {
+                  "field": 2,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 1
+                },
+                {
+                  "field": 3,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 18446744073709551614
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 3,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 494112189
+                },
+                {
+                  "field": 2,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 1
+                },
+                {
+                  "field": 3,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 18446744073709551615
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 3,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 494112189
+                },
+                {
+                  "field": 2,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 1
+                },
+                {
+                  "field": 3,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 18446744073709551614
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 3,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 494112189
+                },
+                {
+                  "field": 2,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 1
+                },
+                {
+                  "field": 3,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 18446744073709551611
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 3,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 725153709
+                },
+                {
+                  "field": 2,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 1
+                },
+                {
+                  "field": 3,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 18446744073709551611
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 3,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 2006773718
+                },
+                {
+                  "field": 2,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 1
+                },
+                {
+                  "field": 3,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 18446744073709551614
+                }
+              ]
+            },
+            {
+              "field": 1,
+              "wire": 2,
+              "wire_type": "bytes",
+              "length": 3,
+              "message": [
+                {
+                  "field": 1,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 2006773718
+                },
+                {
+                  "field": 2,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 1
+                },
+                {
+                  "field": 3,
+                  "wire": 0,
+                  "wire_type": "varint",
+                  "value": 18446744073709551611
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "field": 11,
+      "wire": 0,
+      "wire_type": "varint",
+      "value": 1150155374
+    },
+    {
+      "field": 11,
+      "wire": 0,
+      "wire_type": "varint",
+      "value": 147493976
+    },
+    {
+      "field": 11,
+      "wire": 0,
+      "wire_type": "varint",
+      "value": 36498494
+    }
+  ]
+}

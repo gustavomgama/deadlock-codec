@@ -1,0 +1,171 @@
+{
+  "schema_version": 1,
+  "hero_id": 1034,
+  "hero": 34,
+  "is_default_build": true,
+  "version": 77,
+  "hero_build_id": 0,
+  "author_account_id": 1770758189,
+  "name": "Copy of [Default Apollo Build]",
+  "description": "#Citadel_HeroBuilds_DefaultHeroBuildDesc",
+  "language": 0,
+  "origin_build_id": 0,
+  "field_9": 0,
+  "tags": [
+    1150155374,
+    147493976,
+    36498494
+  ],
+  "field_13": null,
+  "issues": [],
+  "layout": "shared",
+  "details": {
+    "mod_categories": [
+      {
+        "name": "#Citadel_HeroBuilds_EarlyGame",
+        "description": "",
+        "height": 654.0,
+        "width": 171.0,
+        "mods": [
+          1342610602,
+          4139877411,
+          1998374645,
+          1439347412,
+          968099481,
+          3970837787,
+          395944548
+        ]
+      },
+      {
+        "name": "#Citadel_HeroBuilds_MidGame",
+        "description": "",
+        "height": 676.0,
+        "width": 171.0,
+        "mods": [
+          7409189,
+          334300056,
+          1102081447,
+          2603935618,
+          2947183272,
+          380806748,
+          2121044373
+        ]
+      },
+      {
+        "name": "#Citadel_HeroBuilds_LateGame",
+        "description": "",
+        "height": 685.0,
+        "width": 171.0,
+        "mods": [
+          3261353684,
+          915014646,
+          2519598785,
+          1414025773,
+          493591231,
+          1797283378,
+          343572757
+        ]
+      }
+    ],
+    "ability_order": {
+      "currency_changes": [
+        {
+          "ability_id": 725153709,
+          "currency_type": 2,
+          "delta": -1,
+          "annotation": null
+        },
+        {
+          "ability_id": 147493976,
+          "currency_type": 2,
+          "delta": -1,
+          "annotation": null
+        },
+        {
+          "ability_id": 725153709,
+          "currency_type": 1,
+          "delta": -1,
+          "annotation": null
+        },
+        {
+          "ability_id": 2006773718,
+          "currency_type": 2,
+          "delta": -1,
+          "annotation": null
+        },
+        {
+          "ability_id": 147493976,
+          "currency_type": 1,
+          "delta": -1,
+          "annotation": null
+        },
+        {
+          "ability_id": 147493976,
+          "currency_type": 1,
+          "delta": -2,
+          "annotation": null
+        },
+        {
+          "ability_id": 494112189,
+          "currency_type": 2,
+          "delta": -1,
+          "annotation": null
+        },
+        {
+          "ability_id": 147493976,
+          "currency_type": 1,
+          "delta": -5,
+          "annotation": null
+        },
+        {
+          "ability_id": 2006773718,
+          "currency_type": 1,
+          "delta": -1,
+          "annotation": null
+        },
+        {
+          "ability_id": 725153709,
+          "currency_type": 1,
+          "delta": -2,
+          "annotation": null
+        },
+        {
+          "ability_id": 494112189,
+          "currency_type": 1,
+          "delta": -1,
+          "annotation": null
+        },
+        {
+          "ability_id": 494112189,
+          "currency_type": 1,
+          "delta": -2,
+          "annotation": null
+        },
+        {
+          "ability_id": 494112189,
+          "currency_type": 1,
+          "delta": -5,
+          "annotation": null
+        },
+        {
+          "ability_id": 725153709,
+          "currency_type": 1,
+          "delta": -5,
+          "annotation": null
+        },
+        {
+          "ability_id": 2006773718,
+          "currency_type": 1,
+          "delta": -2,
+          "annotation": null
+        },
+        {
+          "ability_id": 2006773718,
+          "currency_type": 1,
+          "delta": -5,
+          "annotation": null
+        }
+      ]
+    }
+  }
+}

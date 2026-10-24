@@ -1,0 +1,4 @@
+[commands]
+ruff_check = "ruff check python/"
+ruff_format = "ruff format --check python/"
+pytest = "pytest python/tests/"

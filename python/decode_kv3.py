@@ -18,9 +18,11 @@ so the document is always valid JSON. Pass --plain for the old compact tree of
 plain Python values.
 
 Usage:
-    python decode_kv3.py <file.kv3> [--out out.json] [--plain] [--strings-only] [--builds] [--blobs DIR]
+    python decode_kv3.py <file.kv3> [--out out.json] [--plain] [--strings-only]
+    [--builds] [--blobs DIR]
     python decode_kv3.py <file.kv3> --self-test
 """
+
 import argparse
 import base64
 import json
@@ -42,17 +44,37 @@ ARRAY_TYPE_BYTE_LENGTH, ARRAY_TYPE_AUXILIARY_BUFFER = 24, 25
 UINT32_ZERO, UINT32_ONE = 26, 27
 
 TYPE_NAMES = {
-    NULL: "NULL", BOOLEAN: "BOOLEAN", INT64: "INT64", UINT64: "UINT64", DOUBLE: "DOUBLE",
-    STRING: "STRING", BINARY_BLOB: "BINARY_BLOB", ARRAY: "ARRAY", OBJECT: "OBJECT",
-    ARRAY_TYPED: "ARRAY_TYPED", INT32: "INT32", UINT32: "UINT32",
-    BOOLEAN_TRUE: "BOOLEAN_TRUE", BOOLEAN_FALSE: "BOOLEAN_FALSE",
-    INT64_ZERO: "INT64_ZERO", INT64_ONE: "INT64_ONE", DOUBLE_ZERO: "DOUBLE_ZERO",
-    DOUBLE_ONE: "DOUBLE_ONE", FLOAT: "FLOAT", INT16: "INT16", UINT16: "UINT16",
-    INT8: "INT8", UINT8: "UINT8", ARRAY_TYPE_BYTE_LENGTH: "ARRAY_TYPE_BYTE_LENGTH",
+    NULL: "NULL",
+    BOOLEAN: "BOOLEAN",
+    INT64: "INT64",
+    UINT64: "UINT64",
+    DOUBLE: "DOUBLE",
+    STRING: "STRING",
+    BINARY_BLOB: "BINARY_BLOB",
+    ARRAY: "ARRAY",
+    OBJECT: "OBJECT",
+    ARRAY_TYPED: "ARRAY_TYPED",
+    INT32: "INT32",
+    UINT32: "UINT32",
+    BOOLEAN_TRUE: "BOOLEAN_TRUE",
+    BOOLEAN_FALSE: "BOOLEAN_FALSE",
+    INT64_ZERO: "INT64_ZERO",
+    INT64_ONE: "INT64_ONE",
+    DOUBLE_ZERO: "DOUBLE_ZERO",
+    DOUBLE_ONE: "DOUBLE_ONE",
+    FLOAT: "FLOAT",
+    INT16: "INT16",
+    UINT16: "UINT16",
+    INT8: "INT8",
+    UINT8: "UINT8",
+    ARRAY_TYPE_BYTE_LENGTH: "ARRAY_TYPE_BYTE_LENGTH",
     ARRAY_TYPE_AUXILIARY_BUFFER: "ARRAY_TYPE_AUXILIARY_BUFFER",
-    UINT32_ZERO: "UINT32_ZERO", UINT32_ONE: "UINT32_ONE",
+    UINT32_ZERO: "UINT32_ZERO",
+    UINT32_ONE: "UINT32_ONE",
 }
-TYPED_ARRAYS = frozenset((ARRAY_TYPED, ARRAY_TYPE_BYTE_LENGTH, ARRAY_TYPE_AUXILIARY_BUFFER))
+TYPED_ARRAYS = frozenset(
+    (ARRAY_TYPED, ARRAY_TYPE_BYTE_LENGTH, ARRAY_TYPE_AUXILIARY_BUFFER)
+)
 
 
 def descriptor(dtype, flags, extra):
@@ -118,27 +140,35 @@ def lz4_block_decode(src, start, in_len, out):
     ip = start
     end = start + in_len
     while ip < end:
+        if ip >= len(src):
+            raise KV3Error("truncated LZ4 block at %d" % ip)
         token = src[ip]
         ip += 1
         lit = token >> 4
         if lit == 15:
             while True:
+                if ip >= len(src):
+                    raise KV3Error("truncated LZ4 literal length at %d" % ip)
                 b = src[ip]
                 ip += 1
                 lit += b
                 if b != 255:
                     break
-        if ip + lit > end:
+        if ip + lit > end or ip + lit > len(src):
             raise KV3Error("literal run overruns input at %d" % ip)
-        out += src[ip:ip + lit]
+        out += src[ip : ip + lit]
         ip += lit
         if ip >= end:
             break
+        if ip + 2 > len(src):
+            raise KV3Error("truncated LZ4 offset at %d" % ip)
         offset = src[ip] | (src[ip + 1] << 8)
         ip += 2
         mlen = token & 0x0F
         if mlen == 15:
             while True:
+                if ip >= len(src):
+                    raise KV3Error("truncated LZ4 match length at %d" % ip)
                 b = src[ip]
                 ip += 1
                 mlen += b
@@ -148,8 +178,9 @@ def lz4_block_decode(src, start, in_len, out):
         if offset == 0 or offset > len(out):
             raise KV3Error("invalid LZ4 match offset %d" % offset)
         sp = len(out) - offset
-        for i in range(mlen):
-            out.append(out[sp + i])
+        for _ in range(mlen):
+            out.append(out[sp])
+            sp += 1
     return ip - start
 
 
@@ -179,6 +210,8 @@ class BinaryKV3:
     # -- header -----------------------------------------------------------
     def read_header(self):
         d = self.data
+        if len(d) < 28:
+            raise KV3Error("truncated KV3 header")
         magic = struct.unpack_from("<I", d, 0)[0]
         if magic == MAGIC0:
             raise KV3Error("VKV3 block-compressed KV3 is not supported")
@@ -193,24 +226,39 @@ class BinaryKV3:
         self.dictionary_id = struct.unpack_from("<H", d, 24)[0]
         self.frame_size = struct.unpack_from("<H", d, 26)[0]
         off = 28
-        (self.count_bytes1, self.count_bytes4, self.count_bytes8, self.count_types) = \
+        (self.count_bytes1, self.count_bytes4, self.count_bytes8, self.count_types) = (
             struct.unpack_from("<iiii", d, off)
+        )
         off += 16
         self.count_objects, self.count_arrays = struct.unpack_from("<HH", d, off)
         off += 4
-        (self.size_uncompressed_total, self.size_compressed_total,
-         self.count_blocks, self.size_binary_blobs) = struct.unpack_from("<iiii", d, off)
+        (
+            self.size_uncompressed_total,
+            self.size_compressed_total,
+            self.count_blocks,
+            self.size_binary_blobs,
+        ) = struct.unpack_from("<iiii", d, off)
         off += 16
         if self.version >= 4:
-            self.count_bytes2, self.size_block_compressed_sizes = struct.unpack_from("<ii", d, off)
+            self.count_bytes2, self.size_block_compressed_sizes = struct.unpack_from(
+                "<ii", d, off
+            )
             off += 8
         if self.version >= 5:
-            (self.size_uncompressed_buffer1, self.size_compressed_buffer1,
-             self.size_uncompressed_buffer2, self.size_compressed_buffer2,
-             self.count_bytes1_buffer2, self.count_bytes2_buffer2,
-             self.count_bytes4_buffer2, self.count_bytes8_buffer2,
-             self.count_nodes, self.count_objects_buffer2,
-             self.count_arrays_buffer2, self.count_array_elements) = struct.unpack_from("<12i", d, off)
+            (
+                self.size_uncompressed_buffer1,
+                self.size_compressed_buffer1,
+                self.size_uncompressed_buffer2,
+                self.size_compressed_buffer2,
+                self.count_bytes1_buffer2,
+                self.count_bytes2_buffer2,
+                self.count_bytes4_buffer2,
+                self.count_bytes8_buffer2,
+                self.count_nodes,
+                self.count_objects_buffer2,
+                self.count_arrays_buffer2,
+                self.count_array_elements,
+            ) = struct.unpack_from("<12i", d, off)
             off += 48
         else:
             self.count_bytes2 = 0
@@ -235,19 +283,38 @@ class BinaryKV3:
         d = self.data
         off = self.data_offset
         if self.compression != 1:
-            raise KV3Error("only LZ4 compressed KV3 is supported (got %s)" % COMPRESSION_NAMES.get(self.compression, self.compression))
+            raise KV3Error(
+                "only LZ4 compressed KV3 is supported (got %s)"
+                % COMPRESSION_NAMES.get(self.compression, self.compression)
+            )
         buf1 = bytearray()
         used = lz4_block_decode(d, off, self.size_compressed_buffer1, buf1)
+        if used != self.size_compressed_buffer1:
+            raise KV3Error(
+                "buffer1 consumed %d != declared %d"
+                % (used, self.size_compressed_buffer1)
+            )
         off += used
         self.buffer1_consumed = used
         if len(buf1) != self.size_uncompressed_buffer1:
-            raise KV3Error("buffer1 size mismatch: %d != %d" % (len(buf1), self.size_uncompressed_buffer1))
+            raise KV3Error(
+                "buffer1 size mismatch: %d != %d"
+                % (len(buf1), self.size_uncompressed_buffer1)
+            )
         buf2 = bytearray()
         used = lz4_block_decode(d, off, self.size_compressed_buffer2, buf2)
+        if used != self.size_compressed_buffer2:
+            raise KV3Error(
+                "buffer2 consumed %d != declared %d"
+                % (used, self.size_compressed_buffer2)
+            )
         off += used
         self.buffer2_consumed = used
         if len(buf2) != self.size_uncompressed_buffer2:
-            raise KV3Error("buffer2 size mismatch: %d != %d" % (len(buf2), self.size_uncompressed_buffer2))
+            raise KV3Error(
+                "buffer2 size mismatch: %d != %d"
+                % (len(buf2), self.size_uncompressed_buffer2)
+            )
         self.blob_data_offset = off
         self.split_buffer1(buf1)
         self.split_buffer2(buf2)
@@ -255,31 +322,42 @@ class BinaryKV3:
 
     def split_buffer1(self, buf):
         off = 0
+        if self.count_bytes4 < 1:
+            raise KV3Error("count_bytes4 must be >= 1")
         if self.count_bytes1:
-            self.aux.b1 = bytearray(buf[off:off + self.count_bytes1])
+            self.aux.b1 = bytearray(buf[off : off + self.count_bytes1])
             off += self.count_bytes1
         if self.count_bytes2:
             off = align_up(off, 2)
-            self.aux.b2 = bytearray(buf[off:off + self.count_bytes2 * 2])
+            self.aux.b2 = bytearray(buf[off : off + self.count_bytes2 * 2])
             off += self.count_bytes2 * 2
         if self.count_bytes4:
             off = align_up(off, 4)
-            self.aux.b4 = bytearray(buf[off:off + self.count_bytes4 * 4])
+            self.aux.b4 = bytearray(buf[off : off + self.count_bytes4 * 4])
             off += self.count_bytes4 * 4
         if self.count_bytes8:
             off = align_up(off, 8)
-            self.aux.b8 = bytearray(buf[off:off + self.count_bytes8 * 8])
+            self.aux.b8 = bytearray(buf[off : off + self.count_bytes8 * 8])
             off += self.count_bytes8 * 8
+        if len(self.aux.b4) < 4:
+            raise KV3Error("missing string count in aux buffer")
         count = struct.unpack_from("<i", self.aux.b4, 0)[0]
         del self.aux.b4[:4]
+        if count < 1:
+            raise KV3Error("string count must be >= 1, got %d" % count)
         blob = bytes(self.aux.b1)
         self.aux.b1 = bytearray()
         strings = []
         pos = 0
-        for _ in range(count):
-            end = blob.index(b"\x00", pos)
+        for idx in range(count):
+            try:
+                end = blob.index(b"\x00", pos)
+            except ValueError:
+                raise KV3Error("unterminated string at index %d" % idx)
             strings.append(blob[pos:end].decode("utf-8", "surrogateescape"))
             pos = end + 1
+        if pos != len(blob):
+            raise KV3Error("string table has %d trailing bytes" % (len(blob) - pos))
         self.strings = strings
         self.string_count_declared = count
         self.string_bytes = len(blob)
@@ -292,32 +370,36 @@ class BinaryKV3:
         self.object_lengths = bytearray(buf[:end])
         off = end
         if self.count_bytes1_buffer2:
-            self.main.b1 = bytearray(buf[off:off + self.count_bytes1_buffer2])
+            self.main.b1 = bytearray(buf[off : off + self.count_bytes1_buffer2])
             off += self.count_bytes1_buffer2
         if self.count_bytes2_buffer2:
             off = align_up(off, 2)
-            self.main.b2 = bytearray(buf[off:off + self.count_bytes2_buffer2 * 2])
+            self.main.b2 = bytearray(buf[off : off + self.count_bytes2_buffer2 * 2])
             off += self.count_bytes2_buffer2 * 2
         if self.count_bytes4_buffer2:
             off = align_up(off, 4)
-            self.main.b4 = bytearray(buf[off:off + self.count_bytes4_buffer2 * 4])
+            self.main.b4 = bytearray(buf[off : off + self.count_bytes4_buffer2 * 4])
             off += self.count_bytes4_buffer2 * 4
         if self.count_bytes8_buffer2:
             off = align_up(off, 8)
-            self.main.b8 = bytearray(buf[off:off + self.count_bytes8_buffer2 * 8])
+            self.main.b8 = bytearray(buf[off : off + self.count_bytes8_buffer2 * 8])
             off += self.count_bytes8_buffer2 * 8
-        self.types = bytearray(buf[off:off + self.count_types])
+        self.types = bytearray(buf[off : off + self.count_types])
         off += self.count_types
         if self.count_blocks:
-            blob_len_bytes = buf[off:off + self.count_blocks * 4]
-            self.blob_lengths = list(struct.unpack_from("<%di" % self.count_blocks, blob_len_bytes, 0))
+            blob_len_bytes = buf[off : off + self.count_blocks * 4]
+            self.blob_lengths = list(
+                struct.unpack_from("<%di" % self.count_blocks, blob_len_bytes, 0)
+            )
             self.declared_blob_lengths = list(self.blob_lengths)
             off += self.count_blocks * 4
             trailer = struct.unpack_from("<I", buf, off)[0]
             off += 4
             if trailer != 0xFFEEDD00:
                 raise KV3Error("bad KV3 trailer %08x" % trailer)
-            self.block_sizes = list(struct.unpack_from("<%dH" % self.count_blocks, buf, off))
+            self.block_sizes = list(
+                struct.unpack_from("<%dH" % self.count_blocks, buf, off)
+            )
             self.declared_block_sizes = list(self.block_sizes)
             off += self.count_blocks * 2
         self.buffer2_trailing = len(buf) - off
@@ -334,12 +416,16 @@ class BinaryKV3:
                     raise KV3Error("ran out of blob frames")
                 size = blocks[bi]
                 bi += 1
-                lz4_block_decode(d, off, size, out)
-                off += size
+                used = lz4_block_decode(d, off, size, out)
+                if used != size:
+                    raise KV3Error(
+                        "blob frame consumed %d != declared %d" % (used, size)
+                    )
+                off += used
         self.blob_frames_used = bi
         self.blob_data_end = off
         self.trailer_offset = off
-        self.trailer = d[off:off + 4]
+        self.trailer = d[off : off + 4]
 
     # -- tree -------------------------------------------------------------
     def read_type(self):
@@ -369,26 +455,42 @@ class BinaryKV3:
     def read_tree(self):
         return self.read_node(self.main)
 
-    def read_node(self, lane, declared=None):
+    def read_node(self, lane, declared=None, depth=0):
+        if depth > 64:
+            raise KV3Error("max recursion depth exceeded")
         if declared is None:
             declared = self.read_type()
         dtype, flags, extra = declared
         node = descriptor(dtype, flags, extra)
         if dtype == OBJECT:
+            if len(self.object_lengths) < 4:
+                raise KV3Error("truncated object length")
             n = struct.unpack_from("<i", self.object_lengths, 0)[0]
             del self.object_lengths[:4]
+            if n < 0:
+                raise KV3Error("negative object count %d" % n)
+            if n > 1000000:
+                raise KV3Error("object count too large %d" % n)
             entries = []
             for _ in range(n):
                 key_id = self.main.take4s()
-                entries.append({
-                    "string_id": key_id,
-                    "key": self.get_string(key_id),
-                    "value": self.read_node(self.main),
-                })
+                entries.append(
+                    {
+                        "string_id": key_id,
+                        "key": self.get_string(key_id),
+                        "value": self.read_node(self.main, depth=depth + 1),
+                    }
+                )
             node["value"] = entries
         elif dtype == ARRAY:
             n = self.main.take4s()
-            node["value"] = [self.read_node(self.main) for _ in range(n)]
+            if n < 0:
+                raise KV3Error("negative array count %d" % n)
+            if n > 1000000:
+                raise KV3Error("array count too large %d" % n)
+            node["value"] = [
+                self.read_node(self.main, depth=depth + 1) for _ in range(n)
+            ]
         elif dtype in TYPED_ARRAYS:
             if dtype == ARRAY_TYPED:
                 n = self.main.take4s()
@@ -399,9 +501,13 @@ class BinaryKV3:
             else:
                 n = lane.take1()
                 buf = self.aux
+            if n < 0:
+                raise KV3Error("negative array count %d" % n)
             sub = self.read_type()
             node["element"] = descriptor(*sub)
-            node["value"] = [self.read_node(buf, sub) for _ in range(n)]
+            node["value"] = [
+                self.read_node(buf, sub, depth=depth + 1) for _ in range(n)
+            ]
         elif dtype == STRING:
             sid = self.main.take4s()
             node["string_id"] = sid
@@ -540,7 +646,12 @@ def payload_document(kv3):
 
 
 def lane_usage(lanes):
-    return {"b1": len(lanes.b1), "b2": len(lanes.b2), "b4": len(lanes.b4), "b8": len(lanes.b8)}
+    return {
+        "b1": len(lanes.b1),
+        "b2": len(lanes.b2),
+        "b4": len(lanes.b4),
+        "b8": len(lanes.b8),
+    }
 
 
 def completeness(kv3):
@@ -573,7 +684,8 @@ def completeness(kv3):
         "trailer": {
             "offset": kv3.trailer_offset,
             "bytes_hex": kv3.trailer.hex(),
-            "matches_marker": len(kv3.trailer) == 4 and struct.unpack("<I", kv3.trailer)[0] == 0xFFEEDD00,
+            "matches_marker": len(kv3.trailer) == 4
+            and struct.unpack("<I", kv3.trailer)[0] == 0xFFEEDD00,
         },
         "trailing_bytes": len(kv3.data) - kv3.trailer_offset - len(kv3.trailer),
         "unconsumed": {
@@ -589,6 +701,7 @@ def completeness(kv3):
 
 def document(kv3, tree):
     return {
+        "schema_version": 1,
         "header": header_document(kv3),
         "payload": payload_document(kv3),
         "strings": kv3.strings,
@@ -603,6 +716,9 @@ def decode(path):
     kv3.read_header()
     kv3.read_payload()
     return kv3
+
+
+decode_kv3 = decode
 
 
 def load_items():
@@ -622,7 +738,11 @@ def build_summary(kv3, tree):
         item = items.get(item_id)
         if not item:
             return None
-        return {"name": item.get("name"), "class_name": item.get("class_name"), "type": item.get("type")}
+        return {
+            "name": item.get("name"),
+            "class_name": item.get("class_name"),
+            "type": item.get("type"),
+        }
 
     builds = []
     categories = {}
@@ -650,14 +770,24 @@ def build_summary(kv3, tree):
                 entry = {
                     "name": name,
                     "description": D.get_str(cat, 3),
-                    "optional": any(f == 6 and not isinstance(v, tuple) for f, w, v in cat),
-                    "height": next((v for f, w, v in cat if f == 4 and not isinstance(v, tuple)), None),
-                    "width": next((v for f, w, v in cat if f == 5 and not isinstance(v, tuple)), None),
+                    "optional": any(
+                        f == 6 and not isinstance(v, tuple) for f, w, v in cat
+                    ),
+                    "height": next(
+                        (v for f, w, v in cat if f == 4 and not isinstance(v, tuple)),
+                        None,
+                    ),
+                    "width": next(
+                        (v for f, w, v in cat if f == 5 and not isinstance(v, tuple)),
+                        None,
+                    ),
                     "mods": mods,
                     "mod_names": [resolve(m) for m in mods],
                 }
                 cats.append(entry)
-                slot = categories.setdefault(name or "", {"count": 0, "description": entry["description"]})
+                slot = categories.setdefault(
+                    name or "", {"count": 0, "description": entry["description"]}
+                )
                 slot["count"] += 1
             changes = []
             for order in D.get_msgs(det, 2):
@@ -666,21 +796,29 @@ def build_summary(kv3, tree):
                     if delta is not None and delta >= (1 << 63):
                         delta -= 1 << 64
                     ctype = D.get_int(cc, 2)
-                    changes.append({"ability_id": D.get_int(cc, 1), "currency_type": ctype, "delta": delta})
+                    changes.append(
+                        {
+                            "ability_id": D.get_int(cc, 1),
+                            "currency_type": ctype,
+                            "delta": delta,
+                        }
+                    )
                     key2 = "%d/%s" % (ctype, delta)
                     ladder[key2] = ladder.get(key2, 0) + 1
-            builds.append({
-                "list": key,
-                "index": index,
-                "field_1": D.get_int(build, 1),
-                "field_2": D.get_int(build, 2),
-                "hero_id": D.get_int(build, 2),
-                "field_3": D.get_int(build, 3),
-                "field_4": D.get_int(build, 4),
-                "name": D.get_str(build, 5),
-                "categories": cats,
-                "ability_order": changes,
-            })
+            builds.append(
+                {
+                    "list": key,
+                    "index": index,
+                    "field_1": D.get_int(build, 1),
+                    "field_2": D.get_int(build, 2),
+                    "hero_id": D.get_int(build, 2),
+                    "field_3": D.get_int(build, 3),
+                    "field_4": D.get_int(build, 4),
+                    "name": D.get_str(build, 5),
+                    "categories": cats,
+                    "ability_order": changes,
+                }
+            )
     return {
         "kv3": {
             "magic": "0x%08X" % kv3.magic,
@@ -704,40 +842,85 @@ def self_test(kv3, tree):
     summary = build_summary(kv3, tree)
     assert kv3.version == 5, "not KV3 v5"
     assert kv3.compression == 1, "not LZ4 compressed"
-    assert list(tree) == ["LastUsedBuilds", "Favorites", "Unpublished", "SavedLastUsed"], list(tree)
+    assert list(tree) == [
+        "LastUsedBuilds",
+        "Favorites",
+        "Unpublished",
+        "SavedLastUsed",
+    ], list(tree)
     # the client rewrites this file whenever a build is saved, so the counts move:
     # check the shape of the file, not the size of the player's library
     for key in ("Favorites", "Unpublished", "SavedLastUsed"):
         assert len(tree[key]) >= 1, key
-    assert len(summary["builds"]) == sum(len(tree[k]) for k in ("Favorites", "Unpublished", "SavedLastUsed"))
-    tokens = {n for n in summary["category_names"] if n.startswith("#Citadel_HeroBuilds")}
+    assert len(summary["builds"]) == sum(
+        len(tree[k]) for k in ("Favorites", "Unpublished", "SavedLastUsed")
+    )
+    tokens = {
+        n for n in summary["category_names"] if n.startswith("#Citadel_HeroBuilds")
+    }
     assert tokens == {
-        "#Citadel_HeroBuilds_Early", "#Citadel_HeroBuilds_EarlyGame", "#Citadel_HeroBuilds_Lane",
-        "#Citadel_HeroBuilds_Late", "#Citadel_HeroBuilds_LateGame", "#Citadel_HeroBuilds_Mid",
+        "#Citadel_HeroBuilds_Early",
+        "#Citadel_HeroBuilds_EarlyGame",
+        "#Citadel_HeroBuilds_Lane",
+        "#Citadel_HeroBuilds_Late",
+        "#Citadel_HeroBuilds_LateGame",
+        "#Citadel_HeroBuilds_Mid",
         "#Citadel_HeroBuilds_MidGame",
     }, tokens
-    assert set(summary["currency_delta_counts"]) == {"1/-1", "1/-2", "1/-5", "2/-1"}, summary["currency_delta_counts"]
+    assert set(summary["currency_delta_counts"]) == {"1/-1", "1/-2", "1/-5", "2/-1"}, (
+        summary["currency_delta_counts"]
+    )
     print("SELF_TEST_OK")
 
 
 def main():
     ap = argparse.ArgumentParser(description="Decode binary KeyValues3 into JSON")
-    ap.add_argument("path")
+    ap.add_argument("path", nargs="?")
     ap.add_argument("--out")
-    ap.add_argument("--plain", action="store_true", help="legacy compact tree without types, flags or header")
+    ap.add_argument(
+        "--plain",
+        action="store_true",
+        help="legacy compact tree without types, flags or header",
+    )
     ap.add_argument("--strings-only", action="store_true")
     ap.add_argument("--blobs", help="write the binary blobs to this directory")
-    ap.add_argument("--builds", action="store_true", help="summarise the saved hero builds")
-    ap.add_argument("--self-test", action="store_true", help="check the decoder against the build cache")
+    ap.add_argument(
+        "--builds", action="store_true", help="summarise the saved hero builds"
+    )
+    ap.add_argument(
+        "--self-test",
+        action="store_true",
+        help="check the decoder against the build cache",
+    )
     args = ap.parse_args()
+    if args.plain and args.builds:
+        ap.error("--plain and --builds are mutually exclusive")
+    if args.strings_only and args.blobs:
+        ap.error("--strings-only and --blobs are mutually exclusive")
+    if args.blobs and (args.plain or args.builds):
+        ap.error("--blobs is mutually exclusive with --plain/--builds")
+    if args.self_test and not args.path:
+        args.path = str(
+            pathlib.Path(__file__).resolve().parent.parent
+            / "data"
+            / "cached_hero_builds.kv3"
+        )
+    if not args.path:
+        ap.error("a path is required")
     kv3 = decode(args.path)
     if args.self_test:
         self_test(kv3, to_plain(kv3.read_tree()))
         return
     if args.strings_only:
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
         text = "\n".join("%d\t%s" % (i, s) for i, s in enumerate(kv3.strings))
         if args.out:
-            pathlib.Path(args.out).write_text(text + "\n", encoding="utf-8")
+            p = pathlib.Path(args.out)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(text + "\n", encoding="utf-8")
         else:
             print(text)
         return
@@ -752,14 +935,22 @@ def main():
         return
     tree = kv3.read_tree()
     if args.builds:
-        text = json.dumps(build_summary(kv3, to_plain(tree)), indent=2, ensure_ascii=False)
+        text = json.dumps(
+            build_summary(kv3, to_plain(tree)), indent=2, ensure_ascii=False
+        )
     elif args.plain:
-        text = json.dumps(to_plain(tree), indent=2, ensure_ascii=False,
-                          default=lambda b: {"bytes_base64": base64.b64encode(b).decode()})
+        text = json.dumps(
+            to_plain(tree),
+            indent=2,
+            ensure_ascii=False,
+            default=lambda b: {"bytes_base64": base64.b64encode(b).decode()},
+        )
     else:
         text = json.dumps(document(kv3, tree), indent=2, ensure_ascii=True)
     if args.out:
-        pathlib.Path(args.out).write_text(text, encoding="utf-8")
+        p = pathlib.Path(args.out)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text + "\n", encoding="utf-8")
     else:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         print(text)
