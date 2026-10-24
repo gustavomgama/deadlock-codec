@@ -32,6 +32,8 @@ import sys
 
 MAGIC0 = 0x03564B56
 MAGIC5 = 0x4B563305
+_MAX_INPUT_BYTES = 64 * 1024 * 1024
+_MAX_OUTPUT_BYTES = 256 * 1024 * 1024
 
 COMPRESSION_NAMES = {0: "none", 1: "lz4"}
 
@@ -98,36 +100,76 @@ class Lanes:
         self.b2 = bytearray()
         self.b4 = bytearray()
         self.b8 = bytearray()
+        self._i1 = 0
+        self._i2 = 0
+        self._i4 = 0
+        self._i8 = 0
+
+    def _trim(self):
+        if self._i1 > len(self.b1) // 2 and self._i1 > 0:
+            self.b1 = self.b1[self._i1 :]
+            self._i1 = 0
+        if self._i2 > len(self.b2) // 2 and self._i2 > 0:
+            self.b2 = self.b2[self._i2 :]
+            self._i2 = 0
+        if self._i4 > len(self.b4) // 2 and self._i4 > 0:
+            self.b4 = self.b4[self._i4 :]
+            self._i4 = 0
+        if self._i8 > len(self.b8) // 2 and self._i8 > 0:
+            self.b8 = self.b8[self._i8 :]
+            self._i8 = 0
 
     def take1(self):
-        v = self.b1[0]
-        del self.b1[0]
+        v = self.b1[self._i1]
+        self._i1 += 1
+        self._trim()
         return v
 
     def take2(self):
-        v = struct.unpack_from("<H", self.b2, 0)[0]
-        del self.b2[:2]
+        v = struct.unpack_from("<H", self.b2, self._i2)[0]
+        self._i2 += 2
+        self._trim()
         return v
 
     def take4(self):
-        v = struct.unpack_from("<I", self.b4, 0)[0]
-        del self.b4[:4]
+        v = struct.unpack_from("<I", self.b4, self._i4)[0]
+        self._i4 += 4
+        self._trim()
         return v
 
     def take4s(self):
-        v = struct.unpack_from("<i", self.b4, 0)[0]
-        del self.b4[:4]
+        v = struct.unpack_from("<i", self.b4, self._i4)[0]
+        self._i4 += 4
+        self._trim()
         return v
 
     def take8(self):
-        v = struct.unpack_from("<Q", self.b8, 0)[0]
-        del self.b8[:8]
+        v = struct.unpack_from("<Q", self.b8, self._i8)[0]
+        self._i8 += 8
+        self._trim()
         return v
 
     def take8f(self):
-        v = struct.unpack_from("<d", self.b8, 0)[0]
-        del self.b8[:8]
+        v = struct.unpack_from("<d", self.b8, self._i8)[0]
+        self._i8 += 8
+        self._trim()
         return v
+
+    @property
+    def remaining1(self):
+        return len(self.b1) - self._i1
+
+    @property
+    def remaining2(self):
+        return len(self.b2) - self._i2
+
+    @property
+    def remaining4(self):
+        return len(self.b4) - self._i4
+
+    @property
+    def remaining8(self):
+        return len(self.b8) - self._i8
 
 
 def align_up(offset, alignment):
@@ -140,6 +182,8 @@ def lz4_block_decode(src, start, in_len, out):
     ip = start
     end = start + in_len
     while ip < end:
+        if len(out) > 256 * 1024 * 1024:
+            raise KV3Error("LZ4 output exceeds limit")
         if ip >= len(src):
             raise KV3Error("truncated LZ4 block at %d" % ip)
         token = src[ip]
@@ -157,6 +201,8 @@ def lz4_block_decode(src, start, in_len, out):
         if ip + lit > end or ip + lit > len(src):
             raise KV3Error("literal run overruns input at %d" % ip)
         out += src[ip : ip + lit]
+        if len(out) > 256 * 1024 * 1024:
+            raise KV3Error("LZ4 output exceeds limit")
         ip += lit
         if ip >= end:
             break
@@ -177,6 +223,8 @@ def lz4_block_decode(src, start, in_len, out):
         mlen += 4
         if offset == 0 or offset > len(out):
             raise KV3Error("invalid LZ4 match offset %d" % offset)
+        if mlen > 1024 * 1024:
+            raise KV3Error("LZ4 match too long")
         sp = len(out) - offset
         for _ in range(mlen):
             out.append(out[sp])
@@ -326,26 +374,30 @@ class BinaryKV3:
             raise KV3Error("count_bytes4 must be >= 1")
         if self.count_bytes1:
             self.aux.b1 = bytearray(buf[off : off + self.count_bytes1])
+            self.aux._i1 = 0
             off += self.count_bytes1
         if self.count_bytes2:
             off = align_up(off, 2)
             self.aux.b2 = bytearray(buf[off : off + self.count_bytes2 * 2])
+            self.aux._i2 = 0
             off += self.count_bytes2 * 2
         if self.count_bytes4:
             off = align_up(off, 4)
             self.aux.b4 = bytearray(buf[off : off + self.count_bytes4 * 4])
+            self.aux._i4 = 0
             off += self.count_bytes4 * 4
         if self.count_bytes8:
             off = align_up(off, 8)
             self.aux.b8 = bytearray(buf[off : off + self.count_bytes8 * 8])
+            self.aux._i8 = 0
             off += self.count_bytes8 * 8
-        if len(self.aux.b4) < 4:
+        if self.aux.remaining4 < 4:
             raise KV3Error("missing string count in aux buffer")
-        count = struct.unpack_from("<i", self.aux.b4, 0)[0]
-        del self.aux.b4[:4]
+        count = struct.unpack_from("<i", self.aux.b4, self.aux._i4)[0]
+        self.aux._i4 += 4
         if count < 1:
             raise KV3Error("string count must be >= 1, got %d" % count)
-        blob = bytes(self.aux.b1)
+        blob = bytes(self.aux.b1[self.aux._i1 :])
         self.aux.b1 = bytearray()
         strings = []
         pos = 0
@@ -371,18 +423,22 @@ class BinaryKV3:
         off = end
         if self.count_bytes1_buffer2:
             self.main.b1 = bytearray(buf[off : off + self.count_bytes1_buffer2])
+            self.main._i1 = 0
             off += self.count_bytes1_buffer2
         if self.count_bytes2_buffer2:
             off = align_up(off, 2)
             self.main.b2 = bytearray(buf[off : off + self.count_bytes2_buffer2 * 2])
+            self.main._i2 = 0
             off += self.count_bytes2_buffer2 * 2
         if self.count_bytes4_buffer2:
             off = align_up(off, 4)
             self.main.b4 = bytearray(buf[off : off + self.count_bytes4_buffer2 * 4])
+            self.main._i4 = 0
             off += self.count_bytes4_buffer2 * 4
         if self.count_bytes8_buffer2:
             off = align_up(off, 8)
             self.main.b8 = bytearray(buf[off : off + self.count_bytes8_buffer2 * 8])
+            self.main._i8 = 0
             off += self.count_bytes8_buffer2 * 8
         self.types = bytearray(buf[off : off + self.count_types])
         off += self.count_types
@@ -533,11 +589,11 @@ class BinaryKV3:
         if dtype == DOUBLE:
             return lane.take8f()
         if dtype == INT32:
-            v = struct.unpack_from("<i", lane.b4, 0)[0]
+            v = struct.unpack_from("<i", lane.b4, lane._i4)[0]
             lane.take4()
             return v
         if dtype == UINT32:
-            v = struct.unpack_from("<I", lane.b4, 0)[0]
+            v = struct.unpack_from("<I", lane.b4, lane._i4)[0]
             lane.take4()
             return v
         if dtype == BOOLEAN_TRUE:
@@ -553,19 +609,19 @@ class BinaryKV3:
         if dtype == DOUBLE_ONE:
             return 1.0
         if dtype == FLOAT:
-            v = struct.unpack_from("<f", lane.b4, 0)[0]
+            v = struct.unpack_from("<f", lane.b4, lane._i4)[0]
             lane.take4()
             return v
         if dtype == INT16:
-            v = struct.unpack_from("<h", lane.b2, 0)[0]
+            v = struct.unpack_from("<h", lane.b2, lane._i2)[0]
             lane.take2()
             return v
         if dtype == UINT16:
-            v = struct.unpack_from("<H", lane.b2, 0)[0]
+            v = struct.unpack_from("<H", lane.b2, lane._i2)[0]
             lane.take2()
             return v
         if dtype == INT8:
-            v = struct.unpack_from("<b", lane.b1, 0)[0]
+            v = struct.unpack_from("<b", lane.b1, lane._i1)[0]
             lane.take1()
             return v
         if dtype == UINT8:
@@ -591,6 +647,12 @@ def to_plain(node):
     dtype = node["type"]
     value = node.get("value")
     if dtype == "OBJECT":
+        keys = [legacy_text(entry["key"]) for entry in value]
+        if len(keys) != len(set(keys)):
+            import sys as _sys
+
+            msg = "WARNING: duplicate object keys dropped in --plain mode"
+            print(msg, file=_sys.stderr)
         return {legacy_text(entry["key"]): to_plain(entry["value"]) for entry in value}
     if dtype == "BINARY_BLOB":
         return base64.b64decode(value["bytes_base64"])
@@ -647,10 +709,10 @@ def payload_document(kv3):
 
 def lane_usage(lanes):
     return {
-        "b1": len(lanes.b1),
-        "b2": len(lanes.b2),
-        "b4": len(lanes.b4),
-        "b8": len(lanes.b8),
+        "b1": lanes.remaining1,
+        "b2": lanes.remaining2,
+        "b4": lanes.remaining4,
+        "b8": lanes.remaining8,
     }
 
 
@@ -711,10 +773,24 @@ def document(kv3, tree):
 
 
 def decode(path):
-    data = pathlib.Path(path).read_bytes()
+    p = pathlib.Path(path)
+    if not p.exists():
+        raise KV3Error("file not found: %s" % path)
+    if not p.is_file():
+        raise KV3Error("not a file: %s" % path)
+    if p.stat().st_size > _MAX_INPUT_BYTES:
+        raise KV3Error("input file too large")
+    data = p.read_bytes()
+    if len(data) > _MAX_INPUT_BYTES:
+        raise KV3Error("input too large")
+    if not data:
+        raise KV3Error("empty input")
     kv3 = BinaryKV3(data)
-    kv3.read_header()
-    kv3.read_payload()
+    try:
+        kv3.read_header()
+        kv3.read_payload()
+    except struct.error as e:
+        raise KV3Error("truncated KV3 file: %s" % e)
     return kv3
 
 
@@ -730,6 +806,10 @@ def load_items():
 
 def build_summary(kv3, tree):
     """Summarise the saved hero builds stored in the client's build cache."""
+    import pathlib as _pathlib
+    import sys as _sys
+
+    _sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parent))
     import decode_build_code as D
 
     items = load_items()
@@ -917,6 +997,8 @@ def main():
         except Exception:
             pass
         text = "\n".join("%d\t%s" % (i, s) for i, s in enumerate(kv3.strings))
+        if len(text) > _MAX_OUTPUT_BYTES:
+            raise KV3Error("output too large")
         if args.out:
             p = pathlib.Path(args.out)
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -947,6 +1029,8 @@ def main():
         )
     else:
         text = json.dumps(document(kv3, tree), indent=2, ensure_ascii=True)
+    if len(text) > _MAX_OUTPUT_BYTES:
+        raise KV3Error("output too large")
     if args.out:
         p = pathlib.Path(args.out)
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -961,4 +1045,10 @@ if __name__ == "__main__":
         main()
     except KV3Error as exc:
         print("KV3_ERROR %s" % exc, file=sys.stderr)
+        sys.exit(1)
+    except struct.error as exc:
+        print("KV3_ERROR %s" % exc, file=sys.stderr)
+        sys.exit(1)
+    except Exception as exc:
+        print("ERROR: %s" % exc, file=sys.stderr)
         sys.exit(1)

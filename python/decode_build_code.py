@@ -9,6 +9,8 @@ import sys
 _ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 _ZSTD_DECOMPRESSOR = None
 _DEFAULT_BUILD_HERO_OFFSET = 1000
+_MAX_INPUT_BYTES = 16 * 1024 * 1024
+_MAX_OUTPUT_BYTES = 64 * 1024 * 1024
 
 
 def read_varint(data, i):
@@ -55,7 +57,10 @@ def parse_message(data, issues=None, depth=0, max_depth=64):
     read = read_varint
     i = 0
     n = len(data)
-    while i < n:
+    _MAX_FIELDS = 100000
+    field_count = 0
+    while i < n and field_count < _MAX_FIELDS:
+        field_count += 1
         tag_start = i
         tag = data[i]
         if tag < 0x80:
@@ -184,6 +189,9 @@ def parse_message(data, issues=None, depth=0, max_depth=64):
                     {"offset": tag_start, "reason": "unsupported wire type %d" % wire}
                 )
             break
+    if field_count >= _MAX_FIELDS and i < n:
+        if issues is not None:
+            issues.append({"offset": i, "reason": "field count limit reached"})
     return out
 
 
@@ -260,11 +268,18 @@ def _decompress(raw, max_output_size=10 * 1024 * 1024):
         return _ZSTD_DECOMPRESSOR.decompress(raw, max_output_size=max_output_size)
     except Exception:
         with _ZSTD_DECOMPRESSOR.stream_reader(io.BytesIO(raw)) as reader:
-            return reader.read(max_output_size)
+            result = reader.read(max_output_size + 1)
+            if len(result) > max_output_size:
+                raise ValueError("decompressed output exceeds limit")
+            return result
 
 
 def _payload(code):
+    if not isinstance(code, str):
+        raise ValueError("input must be a string")
     normalized = "".join(code.split())
+    if not normalized:
+        raise ValueError("empty input")
     if len(normalized) > 1024 * 1024:
         raise ValueError("input too large")
     alphabet = "standard"
@@ -282,6 +297,8 @@ def _payload(code):
             raise ValueError("invalid base64: %s; urlsafe: %s" % (e1, e2))
     if not raw:
         raise ValueError("invalid base64")
+    if len(raw) > _MAX_INPUT_BYTES:
+        raise ValueError("decoded payload too large")
     compressed = raw[:4] == _ZSTD_MAGIC
     stored = len(raw)
     if compressed:
@@ -326,6 +343,8 @@ def _cached_candidate(message, issues=None):
 
 
 def decode_build_code(code, layout="auto"):
+    if not isinstance(code, str):
+        raise ValueError("code must be a string")
     raw, _, _, normalized, _, _ = _payload(code)
     issues = []
     top = parse_message(raw, issues)
@@ -441,22 +460,24 @@ def decode_build_code(code, layout="auto"):
     }
 
 
-def raw_document(code):
+def raw_document(code, include_payload_base64=True):
     raw, compressed, stored, normalized, alphabet, padding = _payload(code)
     issues = []
     fields = parse_message(raw, issues)
+    inp = {
+        "base64": normalized,
+        "base64_chars": len(normalized),
+        "stored_bytes": stored,
+        "zstd": compressed,
+        "decoded_bytes": len(raw),
+        "base64_alphabet": alphabet,
+        "base64_padding_added": padding,
+    }
+    if include_payload_base64:
+        inp["payload_base64"] = base64.b64encode(raw).decode("ascii")
     return {
         "schema_version": 1,
-        "input": {
-            "base64": normalized,
-            "base64_chars": len(normalized),
-            "stored_bytes": stored,
-            "zstd": compressed,
-            "decoded_bytes": len(raw),
-            "payload_base64": base64.b64encode(raw).decode("ascii"),
-            "base64_alphabet": alphabet,
-            "base64_padding_added": padding,
-        },
+        "input": inp,
         "issues": issues,
         "tree": _raw_fields(fields),
     }
@@ -477,19 +498,30 @@ def _packed_varints(data):
 
 def read_input(arg):
     if arg == "-":
-        return sys.stdin.read()
+        data = sys.stdin.read(_MAX_INPUT_BYTES + 1)
+        if len(data) > _MAX_INPUT_BYTES:
+            raise ValueError("stdin input too large")
+        return data
     path = pathlib.Path(arg)
     if not path.exists():
         return arg
     if not path.is_file():
         return arg
+    if path.stat().st_size > _MAX_INPUT_BYTES:
+        raise ValueError("input file too large")
     try:
         with open(arg, "r", encoding="utf-8") as fh:
-            return fh.read()
+            data = fh.read(_MAX_INPUT_BYTES + 1)
+            if len(data) > _MAX_INPUT_BYTES:
+                raise ValueError("input file too large")
+            return data
     except UnicodeDecodeError:
         try:
             with open(arg, "r", encoding="utf-16") as fh:
-                return fh.read()
+                data = fh.read(_MAX_INPUT_BYTES + 1)
+                if len(data) > _MAX_INPUT_BYTES:
+                    raise ValueError("input file too large")
+                return data
         except (OSError, UnicodeDecodeError):
             return arg
     except OSError:
@@ -537,6 +569,11 @@ def main():
         help="base64 code, '-' for stdin, or a path to a file containing it",
     )
     ap.add_argument("--raw", action="store_true", help="lossless protobuf dump")
+    ap.add_argument(
+        "--no-payload-base64",
+        action="store_true",
+        help="omit payload_base64 from --raw output",
+    )
     ap.add_argument("--out", help="write JSON to this file instead of stdout")
     ap.add_argument(
         "--self-test",
@@ -551,8 +588,16 @@ def main():
         ap.error("a build code, file path or - is required")
     try:
         code = read_input(args.code)
-        doc = raw_document(code) if args.raw else decode_build_code(code)
+        if not code or not code.strip():
+            raise ValueError("empty input")
+        doc = (
+            raw_document(code, include_payload_base64=not args.no_payload_base64)
+            if args.raw
+            else decode_build_code(code)
+        )
         text = json.dumps(doc, indent=2)
+        if len(text) > _MAX_OUTPUT_BYTES:
+            raise ValueError("output too large")
         if args.out:
             p = pathlib.Path(args.out)
             p.parent.mkdir(parents=True, exist_ok=True)

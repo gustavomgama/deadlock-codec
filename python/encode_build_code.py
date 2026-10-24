@@ -8,6 +8,8 @@ import sys
 import zstandard
 
 _ZSTD_COMPRESSOR = None
+_MAX_INPUT_BYTES = 16 * 1024 * 1024
+_MAX_OUTPUT_BYTES = 64 * 1024 * 1024
 
 
 def _compressor(level=None):
@@ -96,49 +98,69 @@ def encode_details(details):
 
 
 def encode_build(obj, level=None):
-    parts = bytearray()
     layout = obj.get("layout")
-    if layout == "cached":
+    cached = layout == "cached"
+    target = bytearray()  # fields go here; wrapped if cached
+    if cached:
         if obj.get("hero_build_id") is not None:
-            parts += encode_field(1, 0, encode_varint(obj["hero_build_id"]))
-        if obj.get("hero_id") is not None:
-            parts += encode_field(2, 0, encode_varint(obj["hero_id"]))
+            target += encode_field(1, 0, encode_varint(obj["hero_build_id"]))
+        if obj.get("hero") is not None or obj.get("hero_id") is not None:
+            hid = (
+                obj.get("hero_id")
+                if obj.get("hero_id") is not None
+                else obj.get("hero")
+            )
+            target += encode_field(2, 0, encode_varint(hid))
     else:
         if obj.get("hero_id") is not None:
-            parts += encode_field(1, 0, encode_varint(obj["hero_id"]))
+            target += encode_field(1, 0, encode_varint(obj["hero_id"]))
         if obj.get("version") is not None:
-            parts += encode_field(2, 0, encode_varint(obj["version"]))
-    if obj.get("hero_build_id") is not None and obj.get("layout") != "cached":
-        parts += encode_field(3, 0, encode_varint(obj["hero_build_id"]))
-    if obj.get("author_account_id") is not None:
-        parts += encode_field(4, 0, encode_varint(obj["author_account_id"]))
+            target += encode_field(2, 0, encode_varint(obj["version"]))
+    if obj.get("hero_build_id") is not None and not cached:
+        target += encode_field(3, 0, encode_varint(obj["hero_build_id"]))
+    if obj.get("author_account_id") is not None and not cached:
+        target += encode_field(4, 0, encode_varint(obj["author_account_id"]))
     if obj.get("name") is not None:
-        parts += encode_field(5, 2, encode_string(obj["name"]))
+        target += encode_field(5, 2, encode_string(obj["name"]))
     if obj.get("description") is not None:
-        parts += encode_field(6, 2, encode_string(obj["description"]))
+        target += encode_field(6, 2, encode_string(obj["description"]))
     if obj.get("language") is not None:
-        parts += encode_field(7, 0, encode_varint(obj["language"]))
+        target += encode_field(7, 0, encode_varint(obj["language"]))
     if obj.get("origin_build_id") is not None:
-        parts += encode_field(8, 0, encode_varint(obj["origin_build_id"]))
+        target += encode_field(8, 0, encode_varint(obj["origin_build_id"]))
     if obj.get("field_9") is not None:
-        parts += encode_field(9, 0, encode_varint(obj["field_9"]))
+        target += encode_field(9, 0, encode_varint(obj["field_9"]))
     if obj.get("details"):
         db = encode_details(obj["details"])
-        parts += encode_field(10, 2, encode_varint(len(db)) + db)
+        target += encode_field(10, 2, encode_varint(len(db)) + db)
     for t in obj.get("tags") or []:
-        parts += encode_field(11, 0, encode_varint(t))
+        target += encode_field(11, 0, encode_varint(t))
     if obj.get("field_13") is not None:
-        parts += encode_field(13, 0, encode_varint(obj["field_13"]))
+        target += encode_field(13, 0, encode_varint(obj["field_13"]))
+    if cached:
+        # wrap inner fields in a message as field 1 of top-level
+        parts = encode_field(1, 2, encode_varint(len(target)) + bytes(target))
+    else:
+        parts = bytes(target)
     comp = _compressor(level).compress(bytes(parts))
     return base64.b64encode(comp).decode()
 
 
 def read_input(arg):
     if arg == "-":
-        return sys.stdin.read()
+        data = sys.stdin.read(_MAX_INPUT_BYTES + 1)
+        if len(data) > _MAX_INPUT_BYTES:
+            raise ValueError("stdin input too large")
+        return data
     try:
+        p = pathlib.Path(arg)
+        if p.exists() and p.is_file() and p.stat().st_size > _MAX_INPUT_BYTES:
+            raise ValueError("input file too large")
         with open(arg, "r", encoding="utf-8") as fh:
-            return fh.read()
+            data = fh.read(_MAX_INPUT_BYTES + 1)
+            if len(data) > _MAX_INPUT_BYTES:
+                raise ValueError("input file too large")
+            return data
     except OSError:
         return arg
 
@@ -156,23 +178,33 @@ def main():
     if args.self_test:
         print("SELF_TEST_OK")
         return
-    if args.path:
-        text = read_input(args.path)
-    else:
-        text = sys.stdin.read()
-    obj = json.loads(text)
-    code = encode_build(obj, level=args.level)
-    if args.url_safe:
-        import base64 as _b64
+    try:
+        if args.path:
+            text = read_input(args.path)
+        else:
+            text = sys.stdin.read(_MAX_INPUT_BYTES + 1)
+            if len(text) > _MAX_INPUT_BYTES:
+                raise ValueError("stdin input too large")
+        if not text or not text.strip():
+            raise ValueError("empty input")
+        obj = json.loads(text)
+        code = encode_build(obj, level=args.level)
+        if len(code) > _MAX_OUTPUT_BYTES:
+            raise ValueError("output too large")
+        if args.url_safe:
+            import base64 as _b64
 
-        raw = _b64.b64decode(code)
-        code = _b64.urlsafe_b64encode(raw).decode().rstrip("=")
-    if args.out:
-        p = pathlib.Path(args.out)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(code + "\n", encoding="utf-8")
-    else:
-        print(code)
+            raw = _b64.b64decode(code)
+            code = _b64.urlsafe_b64encode(raw).decode().rstrip("=")
+        if args.out:
+            p = pathlib.Path(args.out)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(code + "\n", encoding="utf-8")
+        else:
+            print(code)
+    except Exception as e:
+        print("ERROR: %s" % e, file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

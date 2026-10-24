@@ -44,6 +44,16 @@ def test_cached_layout():
     assert doc["author_account_id"] is None
 
 
+def test_cached_round_trip():
+    code = (FIX / "cached_code.txt").read_text().strip()
+    doc = D.decode_build_code(code)
+    code2 = E.encode_build(doc)
+    doc2 = D.decode_build_code(code2)
+    assert doc2["layout"] == "cached"
+    for k in ("hero_id", "hero", "hero_build_id", "version", "name", "tags"):
+        assert doc[k] == doc2[k], k
+
+
 def test_urlsafe():
     code = (FIX / "urlsafe_code.txt").read_text().strip()
     doc = D.decode_build_code(code)
