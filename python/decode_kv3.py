@@ -18,7 +18,7 @@ so the document is always valid JSON. Pass --plain for the old compact tree of
 plain Python values.
 
 Usage:
-    python decode_kv3.py <file.kv3> [--out out.json] [--plain] [--strings-only] [--builds]
+    python decode_kv3.py <file.kv3> [--out out.json] [--plain] [--strings-only] [--builds] [--blobs DIR]
     python decode_kv3.py <file.kv3> --self-test
 """
 import argparse
@@ -30,6 +30,8 @@ import sys
 
 MAGIC0 = 0x03564B56
 MAGIC5 = 0x4B563305
+
+COMPRESSION_NAMES = {0: "none", 1: "lz4"}
 
 # KV3BinaryNodeType
 NULL, BOOLEAN, INT64, UINT64, DOUBLE, STRING, BINARY_BLOB, ARRAY, OBJECT = range(1, 10)
@@ -233,7 +235,7 @@ class BinaryKV3:
         d = self.data
         off = self.data_offset
         if self.compression != 1:
-            raise KV3Error("only LZ4 compressed KV3 is supported (got %d)" % self.compression)
+            raise KV3Error("only LZ4 compressed KV3 is supported (got %s)" % COMPRESSION_NAMES.get(self.compression, self.compression))
         buf1 = bytearray()
         used = lz4_block_decode(d, off, self.size_compressed_buffer1, buf1)
         off += used
@@ -681,7 +683,7 @@ def build_summary(kv3, tree):
             })
     return {
         "kv3": {
-            "magic": "0x%08X" % kv3.version,
+            "magic": "0x%08X" % kv3.magic,
             "version": kv3.version,
             "compression": "lz4" if kv3.compression == 1 else kv3.compression,
             "guid": kv3.guid,
@@ -724,6 +726,7 @@ def main():
     ap.add_argument("--out")
     ap.add_argument("--plain", action="store_true", help="legacy compact tree without types, flags or header")
     ap.add_argument("--strings-only", action="store_true")
+    ap.add_argument("--blobs", help="write the binary blobs to this directory")
     ap.add_argument("--builds", action="store_true", help="summarise the saved hero builds")
     ap.add_argument("--self-test", action="store_true", help="check the decoder against the build cache")
     args = ap.parse_args()
@@ -732,8 +735,20 @@ def main():
         self_test(kv3, to_plain(kv3.read_tree()))
         return
     if args.strings_only:
-        for i, s in enumerate(kv3.strings):
-            print("%d\t%s" % (i, s))
+        text = "\n".join("%d\t%s" % (i, s) for i, s in enumerate(kv3.strings))
+        if args.out:
+            pathlib.Path(args.out).write_text(text + "\n", encoding="utf-8")
+        else:
+            print(text)
+        return
+    if args.blobs:
+        target = pathlib.Path(args.blobs)
+        target.mkdir(parents=True, exist_ok=True)
+        for index, length in enumerate(kv3.declared_blob_lengths):
+            data = bytes(kv3.blobs[:length])
+            del kv3.blobs[:length]
+            (target / ("blob_%02d.bin" % index)).write_bytes(data)
+        print("%d blobs written to %s" % (len(kv3.declared_blob_lengths), target))
         return
     tree = kv3.read_tree()
     if args.builds:

@@ -74,7 +74,8 @@ python python/decode_build_code.py data/examplecodefromgame.md --raw
 
 ```json
 {
-  "input": {"base64_chars": 544, "stored_bytes": 406, "zstd": true, "decoded_bytes": 759},
+  "input": {"base64": "...", "base64_chars": 544, "stored_bytes": 406, "zstd": true,
+            "decoded_bytes": 759, "payload_base64": "..."},
   "tree": [
     {"field": 1, "wire": 0, "wire_type": "varint", "value": 1034}
   ]
@@ -84,6 +85,10 @@ python python/decode_build_code.py data/examplecodefromgame.md --raw
 Abridged: every field follows in wire order with its number, wire type and
 value — varint/fixed32/fixed64 raw, length-delimited chunks as `text`, nested
 `message`, or `bytes_base64`. The cached `.kv3` blobs decode in the same mode.
+
+`--out FILE` writes the JSON to a file, `--self-test` checks the decoder
+against `data/examplecodefromgame.md`, and the output carries `layout`
+(`shared` or `cached`) plus an `issues` list for malformed input.
 
 ### decode_kv3.py
 
@@ -106,6 +111,7 @@ python python/decode_kv3.py data/cached_hero_builds.kv3 --self-test
 | `--builds` | Summary of the saved hero builds, decoded through `decode_build_code.py` |
 | `--strings-only` | The string table, one `id<TAB>string` per line |
 | `--self-test` | Asserts the file shape and prints `SELF_TEST_OK` |
+| `--blobs DIR` | Writes the binary blobs as `blob_NN.bin` |
 | `--out FILE` | Write to a file instead of stdout |
 
 The default document keeps every node's KV3 type, flags, duplicate object keys

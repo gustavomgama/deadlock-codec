@@ -89,8 +89,18 @@ def main():
     json.dump(decoded, tmp); tmp.close()
     rc2, out2 = run([PY, os.path.join(BASE, "encode_build_code.py"), tmp.name])
     os.unlink(tmp.name)
-    if rc2 != 0 or out2.strip() != code:
-        print("STEP 2 ROUND-TRIP: FAIL (re-encoded code differs)")
+    if rc2 != 0 or not out2.strip():
+        print("STEP 2 ROUND-TRIP: FAIL (re-encode failed)")
+        print(out2[:500])
+        sys.exit(1)
+    # the game's zstd frames are not reproducible, so compare the decoded build, not the code bytes
+    rc3, out3 = run([PY, os.path.join(BASE, "decode_build_code.py"), out2.strip()])
+    try:
+        redecoded = json.loads(out3)
+    except ValueError:
+        redecoded = None
+    if rc3 != 0 or redecoded != decoded:
+        print("STEP 2 ROUND-TRIP: FAIL (re-encoded code decodes differently)")
         sys.exit(1)
     print("STEP 2 DECODE+ROUNDTRIP: OK")
 
@@ -155,4 +165,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-PYEOF
