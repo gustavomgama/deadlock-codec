@@ -6,3 +6,5 @@ build.json
 .DS_Store
 Thumbs.db
 data/cached_hero_builds.json
+.ouroboros/traces/
+.ouroboros/seed.yaml
