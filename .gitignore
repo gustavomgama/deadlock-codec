@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+build.json
+.DS_Store
+Thumbs.db
+data/cached_hero_builds.json
+.ouroboros/traces/
+.ouroboros/seed.yaml
+python/tests/fixtures/tmp_build.json
