@@ -5,6 +5,7 @@ import json
 import pathlib
 import struct
 import sys
+from typing import Any, Dict, List, Optional, Tuple
 
 _ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 _ZSTD_DECOMPRESSOR = None
@@ -13,7 +14,8 @@ _MAX_INPUT_BYTES = 16 * 1024 * 1024
 _MAX_OUTPUT_BYTES = 64 * 1024 * 1024
 
 
-def read_varint(data, i):
+def read_varint(data: bytes, i: int) -> Tuple[Any, int]:
+    """Read varint."""
     res = 0
     shift = 0
     n = len(data)
@@ -29,7 +31,8 @@ def read_varint(data, i):
     return None, i
 
 
-def _is_text(chunk):
+def _is_text(chunk: bytes) -> bool:
+    """Is text."""
     if not chunk:
         return True
     try:
@@ -46,7 +49,12 @@ def _is_text(chunk):
     )
 
 
-def parse_message(data, issues=None, depth=0, max_depth=64):
+def parse_message(
+    data: bytes,
+    issues: Optional[List[Dict[str, Any]]] = None,
+    depth: int = 0,
+    max_depth: int = 64,
+) -> List[Tuple[int, int, Any]]:
     """Parse protobuf bytes into list of (field_number, wire_type, value)."""
     if depth > max_depth:
         if issues is not None:
@@ -195,28 +203,32 @@ def parse_message(data, issues=None, depth=0, max_depth=64):
     return out
 
 
-def get_str(fields, num):
+def get_str(fields: List[Tuple[int, int, Any]], num: int) -> Optional[str]:
+    """Get str."""
     for f, w, v in fields:
         if f == num and isinstance(v, tuple) and v[0] == "str":
             return v[1]
     return None
 
 
-def get_int(fields, num):
+def get_int(fields: List[Tuple[int, int, Any]], num: int) -> Optional[int]:
+    """Get int."""
     for f, w, v in fields:
         if f == num and w in (0, 1) and isinstance(v, int) and not isinstance(v, bool):
             return v
     return None
 
 
-def get_float(fields, num):
+def get_float(fields: List[Tuple[int, int, Any]], num: int) -> Optional[float]:
+    """Get float."""
     for f, w, v in fields:
         if f == num and isinstance(v, float):
             return v
     return None
 
 
-def get_msgs(fields, num):
+def get_msgs(fields: List[Tuple[int, int, Any]], num: int) -> List[Any]:
+    """Get msgs."""
     res = []
     for f, w, v in fields:
         if f == num and isinstance(v, tuple) and v[0] == "msg":
@@ -224,7 +236,8 @@ def get_msgs(fields, num):
     return res
 
 
-def _signed(value):
+def _signed(value: Any) -> Any:
+    """Signed."""
     if isinstance(value, int) and not isinstance(value, bool):
         value = value & ((1 << 64) - 1)
         if value >= (1 << 63):
@@ -235,7 +248,8 @@ def _signed(value):
 _WIRE_NAMES = {0: "varint", 1: "fixed64", 2: "bytes", 5: "fixed32"}
 
 
-def _raw_fields(fields):
+def _raw_fields(fields: List[Tuple[int, int, Any]]) -> List[Dict[str, Any]]:
+    """Raw fields."""
     out = []
     for field, wire, value in fields:
         node = {
@@ -258,7 +272,8 @@ def _raw_fields(fields):
     return out
 
 
-def _decompress(raw, max_output_size=10 * 1024 * 1024):
+def _decompress(raw: bytes, max_output_size: int = 10 * 1024 * 1024) -> bytes:
+    """Decompress."""
     global _ZSTD_DECOMPRESSOR
     if _ZSTD_DECOMPRESSOR is None:
         import zstandard
@@ -274,7 +289,8 @@ def _decompress(raw, max_output_size=10 * 1024 * 1024):
             return result
 
 
-def _payload(code):
+def _payload(code: str) -> Tuple[bytes, bool, int, str, str, bool]:
+    """Payload."""
     if not isinstance(code, str):
         raise ValueError("input must be a string")
     normalized = "".join(code.split())
@@ -309,7 +325,8 @@ def _payload(code):
     return raw, compressed, stored, normalized, alphabet, padding
 
 
-def _field_map(fields):
+def _field_map(fields: List[Tuple[int, int, Any]]) -> Dict[str, Any]:
+    """Field map."""
     out = {}
     for field, wire, value in fields:
         key = str(field)
@@ -327,7 +344,11 @@ def _field_map(fields):
     return out
 
 
-def _cached_candidate(message, issues=None):
+def _cached_candidate(
+    message: List[Tuple[int, int, Any]],
+    issues: Optional[List[Dict[str, Any]]] = None,
+) -> bool:
+    """Cached candidate."""
     hero = get_int(message, 2)
     if hero is None:
         return False
@@ -342,7 +363,8 @@ def _cached_candidate(message, issues=None):
     return True
 
 
-def decode_build_code(code, layout="auto"):
+def decode_build_code(code: str, layout: str = "auto") -> Dict[str, Any]:
+    """Decode build code."""
     if not isinstance(code, str):
         raise ValueError("code must be a string")
     raw, _, _, normalized, _, _ = _payload(code)
@@ -461,7 +483,8 @@ def decode_build_code(code, layout="auto"):
     }
 
 
-def raw_document(code, include_payload_base64=True):
+def raw_document(code: str, include_payload_base64: bool = True) -> Dict[str, Any]:
+    """Raw document."""
     raw, compressed, stored, normalized, alphabet, padding = _payload(code)
     issues = []
     fields = parse_message(raw, issues)
@@ -484,7 +507,8 @@ def raw_document(code, include_payload_base64=True):
     }
 
 
-def _packed_varints(data):
+def _packed_varints(data: bytes) -> List[int]:
+    """Packed varints."""
     out = []
     i = 0
     n = len(data)
@@ -497,7 +521,8 @@ def _packed_varints(data):
     return out
 
 
-def read_input(arg):
+def read_input(arg: str) -> str:
+    """Read input."""
     if arg == "-":
         data = sys.stdin.read(_MAX_INPUT_BYTES + 1)
         if len(data) > _MAX_INPUT_BYTES:
@@ -529,7 +554,8 @@ def read_input(arg):
         raise
 
 
-def self_test():
+def self_test() -> None:
+    """Self test."""
     example = (
         pathlib.Path(__file__).resolve().parent
         / "data"
@@ -562,7 +588,8 @@ def self_test():
     print("SELF_TEST_OK")
 
 
-def main():
+def main() -> None:
+    """Main."""
     ap = argparse.ArgumentParser(description="Decode a Deadlock build code into JSON")
     ap.add_argument(
         "code",

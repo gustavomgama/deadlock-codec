@@ -4,6 +4,7 @@ import json
 import pathlib
 import struct
 import sys
+from typing import Any, Dict, Optional
 
 import zstandard
 
@@ -12,7 +13,8 @@ _MAX_INPUT_BYTES = 16 * 1024 * 1024
 _MAX_OUTPUT_BYTES = 64 * 1024 * 1024
 
 
-def _compressor(level=None):
+def _compressor(level: Optional[int] = None) -> Any:
+    """Compressor."""
     global _ZSTD_COMPRESSOR
     if level is None and _ZSTD_COMPRESSOR is not None:
         return _ZSTD_COMPRESSOR
@@ -26,7 +28,8 @@ def _compressor(level=None):
     return c
 
 
-def encode_varint(value):
+def encode_varint(value: Any) -> bytes:
+    """Encode varint."""
     v = int(value)
     if v < 0:
         v += 1 << 64
@@ -38,20 +41,24 @@ def encode_varint(value):
     return bytes(out)
 
 
-def encode_field(field, wire, value_bytes):
+def encode_field(field: int, wire: int, value_bytes: bytes) -> bytes:
+    """Encode field."""
     return encode_varint((field << 3) | wire) + value_bytes
 
 
-def encode_string(s):
+def encode_string(s: str) -> bytes:
+    """Encode string."""
     b = s.encode("utf-8")
     return encode_varint(len(b)) + b
 
 
-def encode_mod(mid):
+def encode_mod(mid: Any) -> bytes:
+    """Encode mod."""
     return encode_field(1, 0, encode_varint(mid))
 
 
-def encode_category(cat):
+def encode_category(cat: Dict[str, Any]) -> bytes:
+    """Encode category."""
     parts = bytearray()
     for mid in cat.get("mods") or []:
         mod_msg = encode_mod(mid)
@@ -69,7 +76,8 @@ def encode_category(cat):
     return bytes(parts)
 
 
-def encode_cc(cc):
+def encode_cc(cc: Dict[str, Any]) -> bytes:
+    """Encode cc."""
     parts = bytearray()
     if cc.get("ability_id") is not None:
         parts += encode_field(1, 0, encode_varint(cc["ability_id"]))
@@ -82,7 +90,8 @@ def encode_cc(cc):
     return bytes(parts)
 
 
-def encode_details(details):
+def encode_details(details: Dict[str, Any]) -> bytes:
+    """Encode details."""
     parts = bytearray()
     for cat in details.get("mod_categories") or []:
         cat_bytes = encode_category(cat)
@@ -97,7 +106,8 @@ def encode_details(details):
     return bytes(parts)
 
 
-def encode_build(obj, level=None):
+def encode_build(obj: Dict[str, Any], level: Optional[int] = None) -> str:
+    """Encode build."""
     layout = obj.get("layout")
     cached = layout == "cached"
     target = bytearray()  # fields go here; wrapped if cached
@@ -146,7 +156,8 @@ def encode_build(obj, level=None):
     return base64.b64encode(comp).decode()
 
 
-def read_input(arg):
+def read_input(arg: str) -> str:
+    """Read input."""
     if arg == "-":
         data = sys.stdin.read(_MAX_INPUT_BYTES + 1)
         if len(data) > _MAX_INPUT_BYTES:
@@ -165,7 +176,30 @@ def read_input(arg):
         return arg
 
 
-def main():
+def self_test() -> None:
+    """Round-trip the bundled example build code through decode and encode."""
+    import pathlib
+    import sys as _sys
+
+    _sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    import decode_build_code as D
+
+    example = (
+        pathlib.Path(__file__).resolve().parent / "data" / "examplecodefromgame.md"
+    )
+    if not example.exists():
+        raise SystemExit("self-test needs %s" % example)
+    code = D.read_input(str(example))
+    decoded = D.decode_build_code(code)
+    encoded = encode_build(decoded)
+    roundtripped = D.decode_build_code(encoded)
+    if decoded != roundtripped:
+        raise AssertionError("encode/decode round-trip mismatch")
+    print("SELF_TEST_OK")
+
+
+def main() -> None:
+    """Main."""
     ap = argparse.ArgumentParser(
         description="Encode a build JSON into a Deadlock build code"
     )
@@ -176,7 +210,7 @@ def main():
     ap.add_argument("--level", type=int, default=None)
     args = ap.parse_args()
     if args.self_test:
-        print("SELF_TEST_OK")
+        self_test()
         return
     try:
         if args.path:
