@@ -83,7 +83,7 @@ TYPED_ARRAYS = frozenset(
 def descriptor(
     dtype: int, flags: Optional[int], extra: Optional[int]
 ) -> Dict[str, Any]:
-    """Descriptor."""
+    """Build a descriptor dict for a KV3 node type byte."""
     node: dict[str, Any] = {"type": TYPE_NAMES.get(dtype, "UNKNOWN_%d" % dtype)}
     if flags is not None:
         node["flags"] = flags
@@ -93,7 +93,7 @@ def descriptor(
 
 
 class KV3Error(Exception):
-    """Kv3error."""
+    """Exception raised for malformed or unsupported KV3 input."""
     pass
 
 
@@ -101,7 +101,7 @@ class Lanes:
     """Fixed-width value lanes used by the KV3 binary encoding."""
 
     def __init__(self) -> None:
-        """Init."""
+        """Initialize empty fixed-width value lanes."""
         self.b1 = bytearray()
         self.b2 = bytearray()
         self.b4 = bytearray()
@@ -112,7 +112,7 @@ class Lanes:
         self._i8 = 0
 
     def _trim(self) -> None:
-        """Trim."""
+        """Compact consumed lane prefixes to bound memory usage."""
         if self._i1 > len(self.b1) // 2 and self._i1 > 0:
             self.b1 = self.b1[self._i1 :]
             self._i1 = 0
@@ -127,42 +127,42 @@ class Lanes:
             self._i8 = 0
 
     def take1(self) -> int:
-        """Take1."""
+        """Consume and return one byte from the 1-byte lane."""
         v = self.b1[self._i1]
         self._i1 += 1
         self._trim()
         return v
 
     def take2(self) -> int:
-        """Take2."""
+        """Consume and return an unsigned 16-bit value from the 2-byte lane."""
         v = struct.unpack_from("<H", self.b2, self._i2)[0]
         self._i2 += 2
         self._trim()
         return v
 
     def take4(self) -> int:
-        """Take4."""
+        """Consume and return an unsigned 32-bit value from the 4-byte lane."""
         v = struct.unpack_from("<I", self.b4, self._i4)[0]
         self._i4 += 4
         self._trim()
         return v
 
     def take4s(self) -> int:
-        """Take4s."""
+        """Consume and return a signed 32-bit value from the 4-byte lane."""
         v = struct.unpack_from("<i", self.b4, self._i4)[0]
         self._i4 += 4
         self._trim()
         return v
 
     def take8(self) -> int:
-        """Take8."""
+        """Consume and return an unsigned 64-bit value from the 8-byte lane."""
         v = struct.unpack_from("<Q", self.b8, self._i8)[0]
         self._i8 += 8
         self._trim()
         return v
 
     def take8f(self) -> float:
-        """Take8f."""
+        """Consume and return a double-precision value from the 8-byte lane."""
         v = struct.unpack_from("<d", self.b8, self._i8)[0]
         self._i8 += 8
         self._trim()
@@ -170,27 +170,27 @@ class Lanes:
 
     @property
     def remaining1(self) -> int:
-        """Remaining1."""
+        """Number of unconsumed bytes in the 1-byte lane."""
         return len(self.b1) - self._i1
 
     @property
     def remaining2(self) -> int:
-        """Remaining2."""
+        """Number of unconsumed bytes in the 2-byte lane."""
         return len(self.b2) - self._i2
 
     @property
     def remaining4(self) -> int:
-        """Remaining4."""
+        """Number of unconsumed bytes in the 4-byte lane."""
         return len(self.b4) - self._i4
 
     @property
     def remaining8(self) -> int:
-        """Remaining8."""
+        """Number of unconsumed bytes in the 8-byte lane."""
         return len(self.b8) - self._i8
 
 
 def align_up(offset: int, alignment: int) -> int:
-    """Align up."""
+    """Round offset up to the next multiple of alignment."""
     return (offset + alignment - 1) // alignment * alignment
 
 
@@ -251,9 +251,9 @@ def lz4_block_decode(src: bytes, start: int, in_len: int, out: bytearray) -> int
 
 
 class BinaryKV3:
-    """Binarykv3."""
+    """Parser for a binary KeyValues3 (KV3) document."""
     def __init__(self, data: bytes) -> None:
-        """Init."""
+        """Initialize parser state from raw file bytes."""
         self.data = data
         self.strings = []
         self.types = bytearray()
@@ -277,7 +277,7 @@ class BinaryKV3:
 
     # -- header -----------------------------------------------------------
     def read_header(self) -> int:
-        """Read header."""
+        """Parse and validate the KV3 file header, returning data offset."""
         d = self.data
         if len(d) < 28:
             raise KV3Error("truncated KV3 header")
@@ -349,7 +349,7 @@ class BinaryKV3:
 
     # -- payload ----------------------------------------------------------
     def read_payload(self) -> None:
-        """Read payload."""
+        """Decompress and split the KV3 payload buffers and blobs."""
         d = self.data
         off = self.data_offset
         if self.compression != 1:
@@ -391,7 +391,7 @@ class BinaryKV3:
         self.read_blobs(off)
 
     def split_buffer1(self, buf: bytearray) -> None:
-        """Split buffer1."""
+        """Split buffer 1 into the string table and auxiliary lanes."""
         off = 0
         if self.count_bytes4 < 1:
             raise KV3Error("count_bytes4 must be >= 1")
@@ -440,7 +440,7 @@ class BinaryKV3:
         self.buffer1_trailing = len(buf) - off
 
     def split_buffer2(self, buf: bytearray) -> None:
-        """Split buffer2."""
+        """Split buffer 2 into object lengths, lanes, types, and blob metadata."""
         off = 0
         end = self.count_objects_buffer2 * 4
         self.object_lengths = bytearray(buf[:end])
@@ -485,7 +485,7 @@ class BinaryKV3:
         self.buffer2_trailing = len(buf) - off
 
     def read_blobs(self, off: int) -> None:
-        """Read blobs."""
+        """Read chained LZ4 blob frames into the blob buffer."""
         d = self.data
         blocks = getattr(self, "block_sizes", [])
         bi = 0
@@ -510,7 +510,7 @@ class BinaryKV3:
 
     # -- tree -------------------------------------------------------------
     def read_type(self) -> Tuple[int, Optional[int], Optional[int]]:
-        """Read type."""
+        """Read and decode one KV3 node type byte with flags/extra."""
         b = self.types[0]
         del self.types[0]
         flags = extra = None
@@ -530,13 +530,13 @@ class BinaryKV3:
         return b, flags, extra
 
     def get_string(self, sid: int) -> Optional[str]:
-        """Get string."""
+        """Look up a string by its table id."""
         if 0 <= sid < len(self.strings):
             return self.strings[sid]
         return None
 
     def read_tree(self) -> Dict[str, Any]:
-        """Read tree."""
+        """Read the root KV3 node as a document tree."""
         return self.read_node(self.main)
 
     def read_node(
@@ -545,7 +545,7 @@ class BinaryKV3:
         declared: Optional[Tuple[int, Optional[int], Optional[int]]] = None,
         depth: int = 0,
     ) -> Dict[str, Any]:
-        """Read node."""
+        """Read one KV3 node from the given value lane."""
         if depth > 64:
             raise KV3Error("max recursion depth exceeded")
         if declared is None:
@@ -612,7 +612,7 @@ class BinaryKV3:
         return node
 
     def read_scalar(self, dtype: int, lane: "Lanes") -> Any:
-        """Read scalar."""
+        """Read a scalar KV3 value from the given value lane."""
         if dtype == NULL:
             return None
         if dtype == BOOLEAN:
@@ -669,7 +669,7 @@ class BinaryKV3:
 
 
 def legacy_text(text: Optional[str]) -> str:
-    """Legacy text."""
+    """Coerce a string to a legacy UTF-8-safe representation."""
     if text is None:
         return ""
     try:
@@ -680,7 +680,7 @@ def legacy_text(text: Optional[str]) -> str:
 
 
 def to_plain(node: Dict[str, Any]) -> Any:
-    """To plain."""
+    """Convert a typed KV3 node tree into plain Python values."""
     dtype = node["type"]
     value: Any = node.get("value")
     if dtype == "OBJECT":
@@ -701,7 +701,7 @@ def to_plain(node: Dict[str, Any]) -> Any:
 
 
 def header_document(kv3: BinaryKV3) -> Dict[str, Any]:
-    """Header document."""
+    """Build the JSON header section for a decoded KV3 document."""
     return {
         "magic": "0x%08X" % kv3.magic,
         "version": kv3.version,
@@ -738,7 +738,7 @@ def header_document(kv3: BinaryKV3) -> Dict[str, Any]:
 
 
 def payload_document(kv3: BinaryKV3) -> Dict[str, Any]:
-    """Payload document."""
+    """Build the JSON payload metadata section for a decoded KV3 document."""
     return {
         "string_count": len(kv3.strings),
         "blob_lengths": kv3.declared_blob_lengths,
@@ -747,7 +747,7 @@ def payload_document(kv3: BinaryKV3) -> Dict[str, Any]:
 
 
 def lane_usage(lanes: Lanes) -> Dict[str, int]:
-    """Lane usage."""
+    """Report remaining unconsumed bytes across all lanes."""
     return {
         "b1": lanes.remaining1,
         "b2": lanes.remaining2,
@@ -757,7 +757,7 @@ def lane_usage(lanes: Lanes) -> Dict[str, int]:
 
 
 def completeness(kv3: BinaryKV3) -> Dict[str, Any]:
-    """Completeness."""
+    """Build the completeness/accounting section for a decoded KV3 document."""
     return {
         "file_size": len(kv3.data),
         "header_bytes": kv3.data_offset,
@@ -803,7 +803,7 @@ def completeness(kv3: BinaryKV3) -> Dict[str, Any]:
 
 
 def document(kv3: BinaryKV3, tree: Dict[str, Any]) -> Dict[str, Any]:
-    """Document."""
+    """Assemble the full JSON document for a decoded KV3 file."""
     return {
         "schema_version": 1,
         "header": header_document(kv3),
@@ -815,7 +815,7 @@ def document(kv3: BinaryKV3, tree: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def decode(path: str) -> BinaryKV3:
-    """Decode."""
+    """Decode a binary KV3 file from disk."""
     p = pathlib.Path(path)
     if not p.exists():
         raise KV3Error("file not found: %s" % path)
@@ -840,15 +840,15 @@ def decode(path: str) -> BinaryKV3:
 decode_kv3 = decode
 
 
-def load_items() -> Dict[Any, Any]:
-    """Load items."""
+def load_items() -> Dict[int, Dict[str, Any]]:
+    """Load the item reference table from data/items_raw.json."""
     path = pathlib.Path(__file__).resolve().parent / "data" / "items_raw.json"
     if not path.exists():
         return {}
     return {i["id"]: i for i in json.loads(path.read_text(encoding="utf-8"))}
 
 
-def build_summary(kv3: BinaryKV3, tree: Any) -> Dict[str, Any]:
+def build_summary(kv3: BinaryKV3, tree: Dict[str, Any]) -> Dict[str, Any]:
     """Summarise the saved hero builds stored in the client's build cache."""
     import pathlib as _pathlib
     import sys as _sys
@@ -858,8 +858,8 @@ def build_summary(kv3: BinaryKV3, tree: Any) -> Dict[str, Any]:
 
     items = load_items()
 
-    def resolve(item_id):
-        """Resolve."""
+    def resolve(item_id: int) -> Optional[Dict[str, Any]]:
+        """Resolve an item id to its name, class, and type."""
         item = items.get(item_id)
         if not item:
             return None
@@ -962,7 +962,7 @@ def build_summary(kv3: BinaryKV3, tree: Any) -> Dict[str, Any]:
     }
 
 
-def self_test(kv3: BinaryKV3, tree: Any) -> None:
+def self_test(kv3: BinaryKV3, tree: Dict[str, Any]) -> None:
     """Check the decoder against the structure of the client's build cache."""
     summary = build_summary(kv3, tree)
     assert kv3.version == 5, "not KV3 v5"
@@ -999,7 +999,7 @@ def self_test(kv3: BinaryKV3, tree: Any) -> None:
 
 
 def main() -> None:
-    """Main."""
+    """Command-line entry point for decoding KV3 files."""
     ap = argparse.ArgumentParser(description="Decode binary KeyValues3 into JSON")
     ap.add_argument("path", nargs="?")
     ap.add_argument("--out")

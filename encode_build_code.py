@@ -8,28 +8,19 @@ from typing import Any, Dict, Optional
 
 import zstandard
 
-_ZSTD_COMPRESSOR = None
 _MAX_INPUT_BYTES = 16 * 1024 * 1024
 _MAX_OUTPUT_BYTES = 64 * 1024 * 1024
 
 
-def _compressor(level: Optional[int] = None) -> Any:
-    """Compressor."""
-    global _ZSTD_COMPRESSOR
-    if level is None and _ZSTD_COMPRESSOR is not None:
-        return _ZSTD_COMPRESSOR
-    c = (
-        zstandard.ZstdCompressor(level=level)
-        if level is not None
-        else zstandard.ZstdCompressor()
-    )
+def _compressor(level: Optional[int] = None) -> zstandard.ZstdCompressor:
+    """Build a zstd compressor for the requested level."""
     if level is None:
-        _ZSTD_COMPRESSOR = c
-    return c
+        return zstandard.ZstdCompressor()
+    return zstandard.ZstdCompressor(level=level)
 
 
 def encode_varint(value: Any) -> bytes:
-    """Encode varint."""
+    """Encode an integer as a protobuf varint."""
     v = int(value)
     if v < 0:
         v += 1 << 64
@@ -42,23 +33,23 @@ def encode_varint(value: Any) -> bytes:
 
 
 def encode_field(field: int, wire: int, value_bytes: bytes) -> bytes:
-    """Encode field."""
+    """Encode a protobuf field tag followed by its value bytes."""
     return encode_varint((field << 3) | wire) + value_bytes
 
 
 def encode_string(s: str) -> bytes:
-    """Encode string."""
+    """Encode a UTF-8 string as a length-delimited field value."""
     b = s.encode("utf-8")
     return encode_varint(len(b)) + b
 
 
-def encode_mod(mid: Any) -> bytes:
-    """Encode mod."""
+def encode_mod(mid: int) -> bytes:
+    """Encode a single mod id inside a category."""
     return encode_field(1, 0, encode_varint(mid))
 
 
 def encode_category(cat: Dict[str, Any]) -> bytes:
-    """Encode category."""
+    """Encode a mod category message."""
     parts = bytearray()
     for mid in cat.get("mods") or []:
         mod_msg = encode_mod(mid)
@@ -77,7 +68,7 @@ def encode_category(cat: Dict[str, Any]) -> bytes:
 
 
 def encode_cc(cc: Dict[str, Any]) -> bytes:
-    """Encode cc."""
+    """Encode a currency change message."""
     parts = bytearray()
     if cc.get("ability_id") is not None:
         parts += encode_field(1, 0, encode_varint(cc["ability_id"]))
@@ -91,7 +82,7 @@ def encode_cc(cc: Dict[str, Any]) -> bytes:
 
 
 def encode_details(details: Dict[str, Any]) -> bytes:
-    """Encode details."""
+    """Encode the details message containing categories and ability order."""
     parts = bytearray()
     for cat in details.get("mod_categories") or []:
         cat_bytes = encode_category(cat)
@@ -107,7 +98,7 @@ def encode_details(details: Dict[str, Any]) -> bytes:
 
 
 def encode_build(obj: Dict[str, Any], level: Optional[int] = None) -> str:
-    """Encode build."""
+    """Encode a build dictionary into a Deadlock build code."""
     layout = obj.get("layout")
     cached = layout == "cached"
     target = bytearray()  # fields go here; wrapped if cached
@@ -157,7 +148,7 @@ def encode_build(obj: Dict[str, Any], level: Optional[int] = None) -> str:
 
 
 def read_input(arg: str) -> str:
-    """Read input."""
+    """Read JSON input from stdin, a file, or a literal argument."""
     if arg == "-":
         data = sys.stdin.read(_MAX_INPUT_BYTES + 1)
         if len(data) > _MAX_INPUT_BYTES:
@@ -199,7 +190,7 @@ def self_test() -> None:
 
 
 def main() -> None:
-    """Main."""
+    """Command-line entry point for encoding build codes."""
     ap = argparse.ArgumentParser(
         description="Encode a build JSON into a Deadlock build code"
     )

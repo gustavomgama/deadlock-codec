@@ -8,14 +8,13 @@ import sys
 from typing import Any, Dict, List, Optional, Tuple
 
 _ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
-_ZSTD_DECOMPRESSOR = None
 _DEFAULT_BUILD_HERO_OFFSET = 1000
 _MAX_INPUT_BYTES = 16 * 1024 * 1024
 _MAX_OUTPUT_BYTES = 64 * 1024 * 1024
 
 
-def read_varint(data: bytes, i: int) -> Tuple[Any, int]:
-    """Read varint."""
+def read_varint(data: bytes, i: int) -> Tuple[Optional[int], int]:
+    """Read a protobuf-style varint from data starting at offset i."""
     res = 0
     shift = 0
     n = len(data)
@@ -32,7 +31,7 @@ def read_varint(data: bytes, i: int) -> Tuple[Any, int]:
 
 
 def _is_text(chunk: bytes) -> bool:
-    """Is text."""
+    """Return True if chunk decodes as printable UTF-8 text."""
     if not chunk:
         return True
     try:
@@ -55,7 +54,7 @@ def parse_message(
     depth: int = 0,
     max_depth: int = 64,
 ) -> List[Tuple[int, int, Any]]:
-    """Parse protobuf bytes into list of (field_number, wire_type, value)."""
+    """Parse protobuf bytes into a list of (field_number, wire_type, value) tuples."""
     if depth > max_depth:
         if issues is not None:
             issues.append({"offset": 0, "reason": "max recursion depth exceeded"})
@@ -75,7 +74,8 @@ def parse_message(
             i += 1
         else:
             res = read(data, i)
-            if res[0] is None:
+            first = res[0]
+            if first is None:
                 if issues is not None:
                     issues.append(
                         {
@@ -84,7 +84,8 @@ def parse_message(
                         }
                     )
                 break
-            tag, i = res
+            tag = first
+            i = res[1]
         if tag == 0:
             if issues is not None:
                 issues.append({"offset": tag_start, "reason": "zero tag"})
@@ -111,7 +112,8 @@ def parse_message(
                     i += 1
                 else:
                     rl = read(data, i)
-                    if rl[0] is None:
+                    first_rl = rl[0]
+                    if first_rl is None:
                         if issues is not None:
                             issues.append(
                                 {
@@ -122,7 +124,8 @@ def parse_message(
                         i = n
                         length = 0
                     else:
-                        length, i = rl
+                        length = first_rl
+                        i = rl[1]
             else:
                 length = 0
                 if issues is not None:
@@ -204,7 +207,7 @@ def parse_message(
 
 
 def get_str(fields: List[Tuple[int, int, Any]], num: int) -> Optional[str]:
-    """Get str."""
+    """Return the first string value for field num, if present."""
     for f, w, v in fields:
         if f == num and isinstance(v, tuple) and v[0] == "str":
             return v[1]
@@ -212,7 +215,7 @@ def get_str(fields: List[Tuple[int, int, Any]], num: int) -> Optional[str]:
 
 
 def get_int(fields: List[Tuple[int, int, Any]], num: int) -> Optional[int]:
-    """Get int."""
+    """Return the first integer value for field num, if present."""
     for f, w, v in fields:
         if f == num and w in (0, 1) and isinstance(v, int) and not isinstance(v, bool):
             return v
@@ -220,15 +223,17 @@ def get_int(fields: List[Tuple[int, int, Any]], num: int) -> Optional[int]:
 
 
 def get_float(fields: List[Tuple[int, int, Any]], num: int) -> Optional[float]:
-    """Get float."""
+    """Return the first float value for field num, if present."""
     for f, w, v in fields:
         if f == num and isinstance(v, float):
             return v
     return None
 
 
-def get_msgs(fields: List[Tuple[int, int, Any]], num: int) -> List[Any]:
-    """Get msgs."""
+def get_msgs(
+    fields: List[Tuple[int, int, Any]], num: int
+) -> List[List[Tuple[int, int, Any]]]:
+    """Return nested messages stored under field num."""
     res = []
     for f, w, v in fields:
         if f == num and isinstance(v, tuple) and v[0] == "msg":
@@ -237,7 +242,7 @@ def get_msgs(fields: List[Tuple[int, int, Any]], num: int) -> List[Any]:
 
 
 def _signed(value: Any) -> Any:
-    """Signed."""
+    """Convert an unsigned 64-bit value to its signed representation."""
     if isinstance(value, int) and not isinstance(value, bool):
         value = value & ((1 << 64) - 1)
         if value >= (1 << 63):
@@ -249,7 +254,7 @@ _WIRE_NAMES = {0: "varint", 1: "fixed64", 2: "bytes", 5: "fixed32"}
 
 
 def _raw_fields(fields: List[Tuple[int, int, Any]]) -> List[Dict[str, Any]]:
-    """Raw fields."""
+    """Render parsed fields as lossless dictionaries."""
     out = []
     for field, wire, value in fields:
         node = {
@@ -273,16 +278,14 @@ def _raw_fields(fields: List[Tuple[int, int, Any]]) -> List[Dict[str, Any]]:
 
 
 def _decompress(raw: bytes, max_output_size: int = 10 * 1024 * 1024) -> bytes:
-    """Decompress."""
-    global _ZSTD_DECOMPRESSOR
-    if _ZSTD_DECOMPRESSOR is None:
-        import zstandard
+    """Decompress a zstd payload, falling back to streaming reads on failure."""
+    import zstandard
 
-        _ZSTD_DECOMPRESSOR = zstandard.ZstdDecompressor()
+    decompressor = zstandard.ZstdDecompressor()
     try:
-        return _ZSTD_DECOMPRESSOR.decompress(raw, max_output_size=max_output_size)
+        return decompressor.decompress(raw, max_output_size=max_output_size)
     except Exception:
-        with _ZSTD_DECOMPRESSOR.stream_reader(io.BytesIO(raw)) as reader:
+        with decompressor.stream_reader(io.BytesIO(raw)) as reader:
             result = reader.read(max_output_size + 1)
             if len(result) > max_output_size:
                 raise ValueError("decompressed output exceeds limit")
@@ -290,7 +293,7 @@ def _decompress(raw: bytes, max_output_size: int = 10 * 1024 * 1024) -> bytes:
 
 
 def _payload(code: str) -> Tuple[bytes, bool, int, str, str, bool]:
-    """Payload."""
+    """Decode the base64/zstd envelope of a build code."""
     if not isinstance(code, str):
         raise ValueError("input must be a string")
     normalized = "".join(code.split())
@@ -325,8 +328,8 @@ def _payload(code: str) -> Tuple[bytes, bool, int, str, str, bool]:
     return raw, compressed, stored, normalized, alphabet, padding
 
 
-def _field_map(fields: List[Tuple[int, int, Any]]) -> Dict[str, Any]:
-    """Field map."""
+def _field_map(fields: List[Tuple[int, int, Any]]) -> Dict[str, List[Any]]:
+    """Group parsed fields by field number for JSON output."""
     out = {}
     for field, wire, value in fields:
         key = str(field)
@@ -348,7 +351,7 @@ def _cached_candidate(
     message: List[Tuple[int, int, Any]],
     issues: Optional[List[Dict[str, Any]]] = None,
 ) -> bool:
-    """Cached candidate."""
+    """Detect whether a message uses the cached build layout."""
     hero = get_int(message, 2)
     if hero is None:
         return False
@@ -364,7 +367,7 @@ def _cached_candidate(
 
 
 def decode_build_code(code: str, layout: str = "auto") -> Dict[str, Any]:
-    """Decode build code."""
+    """Decode a Deadlock build code into a structured dictionary."""
     if not isinstance(code, str):
         raise ValueError("code must be a string")
     raw, _, _, normalized, _, _ = _payload(code)
@@ -484,7 +487,7 @@ def decode_build_code(code: str, layout: str = "auto") -> Dict[str, Any]:
 
 
 def raw_document(code: str, include_payload_base64: bool = True) -> Dict[str, Any]:
-    """Raw document."""
+    """Build a lossless protobuf dump of a build code."""
     raw, compressed, stored, normalized, alphabet, padding = _payload(code)
     issues = []
     fields = parse_message(raw, issues)
@@ -508,7 +511,7 @@ def raw_document(code: str, include_payload_base64: bool = True) -> Dict[str, An
 
 
 def _packed_varints(data: bytes) -> List[int]:
-    """Packed varints."""
+    """Decode a packed repeated varint field."""
     out = []
     i = 0
     n = len(data)
@@ -522,7 +525,7 @@ def _packed_varints(data: bytes) -> List[int]:
 
 
 def read_input(arg: str) -> str:
-    """Read input."""
+    """Read a build code from stdin, a file, or a literal argument."""
     if arg == "-":
         data = sys.stdin.read(_MAX_INPUT_BYTES + 1)
         if len(data) > _MAX_INPUT_BYTES:
@@ -555,7 +558,7 @@ def read_input(arg: str) -> str:
 
 
 def self_test() -> None:
-    """Self test."""
+    """Validate the decoder against the bundled example build code."""
     example = (
         pathlib.Path(__file__).resolve().parent
         / "data"
@@ -589,7 +592,7 @@ def self_test() -> None:
 
 
 def main() -> None:
-    """Main."""
+    """Command-line entry point for decoding build codes."""
     ap = argparse.ArgumentParser(description="Decode a Deadlock build code into JSON")
     ap.add_argument(
         "code",
