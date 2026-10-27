@@ -21,7 +21,9 @@ def _compressor(level: int | None = None) -> zstandard.ZstdCompressor:
 
 def encode_varint(value: Any) -> bytes:
     """Encode an integer as a protobuf varint."""
-    v = int(value)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError("value must be an integer")
+    v = value
     if v < 0:
         v += 1 << 64
     out = bytearray()
@@ -154,17 +156,16 @@ def read_input(arg: str) -> str:
         if len(data) > _MAX_INPUT_BYTES:
             raise ValueError("stdin input too large")
         return data
-    try:
-        p = pathlib.Path(arg)
-        if p.exists() and p.is_file() and p.stat().st_size > _MAX_INPUT_BYTES:
-            raise ValueError("input file too large")
-        with open(arg, encoding="utf-8") as fh:
-            data = fh.read(_MAX_INPUT_BYTES + 1)
-            if len(data) > _MAX_INPUT_BYTES:
-                raise ValueError("input file too large")
-            return data
-    except OSError:
+    p = pathlib.Path(arg)
+    if not (p.exists() and p.is_file()):
         return arg
+    if p.stat().st_size > _MAX_INPUT_BYTES:
+        raise ValueError("input file too large")
+    with open(arg, encoding="utf-8") as fh:
+        data = fh.read(_MAX_INPUT_BYTES + 1)
+    if len(data) > _MAX_INPUT_BYTES:
+        raise ValueError("input file too large")
+    return data
 
 
 def self_test() -> None:

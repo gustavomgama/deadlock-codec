@@ -101,7 +101,7 @@ def parse_message(
                 issues.append(
                     {
                         "offset": tag_start,
-                        "reason": "deprecated group wire type %d" % wire,
+                        "reason": f"deprecated group wire type {wire}",
                     }
                 )
             continue
@@ -137,7 +137,7 @@ def parse_message(
                             "offset": i,
                             "reason": (
                                 "truncated length-delimited field: "
-                                "declared %d, available %d" % (length, n - i)
+                                f"declared {length}, available {n - i}"
                             ),
                         }
                     )
@@ -197,7 +197,7 @@ def parse_message(
         else:
             if issues is not None:
                 issues.append(
-                    {"offset": tag_start, "reason": "unsupported wire type %d" % wire}
+                    {"offset": tag_start, "reason": f"unsupported wire type {wire}"}
                 )
             break
     if field_count >= _MAX_FIELDS and i < n and issues is not None:
@@ -392,7 +392,8 @@ def decode_build_code(code: str, layout: str = "auto") -> dict[str, Any]:
         and hero_id >= _DEFAULT_BUILD_HERO_OFFSET
     )
     if is_default_build:
-        assert hero_id is not None
+        if hero_id is None:
+            raise ValueError("default build missing hero id")
         resolved_hero_id = hero_id - _DEFAULT_BUILD_HERO_OFFSET
     else:
         resolved_hero_id = hero_id

@@ -84,7 +84,7 @@ def descriptor(
     dtype: int, flags: int | None, extra: int | None
 ) -> dict[str, Any]:
     """Build a descriptor dict for a KV3 node type byte."""
-    node: dict[str, Any] = {"type": TYPE_NAMES.get(dtype, "UNKNOWN_%d" % dtype)}
+    node: dict[str, Any] = {"type": TYPE_NAMES.get(dtype, f"UNKNOWN_{dtype}")}
     if flags is not None:
         node["flags"] = flags
     if extra is not None:
@@ -214,21 +214,21 @@ def lz4_block_decode(src: bytes, start: int, in_len: int, out: bytearray) -> int
         if len(out) > 256 * 1024 * 1024:
             raise KV3Error("LZ4 output exceeds limit")
         if ip >= len(src):
-            raise KV3Error("truncated LZ4 block at %d" % ip)
+            raise KV3Error(f"truncated LZ4 block at {ip}")
         token = src[ip]
         ip += 1
         lit = token >> 4
         if lit == 15:
             while True:
                 if ip >= len(src):
-                    raise KV3Error("truncated LZ4 literal length at %d" % ip)
+                    raise KV3Error(f"truncated LZ4 literal length at {ip}")
                 b = src[ip]
                 ip += 1
                 lit += b
                 if b != 255:
                     break
         if ip + lit > end or ip + lit > len(src):
-            raise KV3Error("literal run overruns input at %d" % ip)
+            raise KV3Error(f"literal run overruns input at {ip}")
         out += src[ip : ip + lit]
         if len(out) > 256 * 1024 * 1024:
             raise KV3Error("LZ4 output exceeds limit")
@@ -236,14 +236,14 @@ def lz4_block_decode(src: bytes, start: int, in_len: int, out: bytearray) -> int
         if ip >= end:
             break
         if ip + 2 > len(src):
-            raise KV3Error("truncated LZ4 offset at %d" % ip)
+            raise KV3Error(f"truncated LZ4 offset at {ip}")
         offset = src[ip] | (src[ip + 1] << 8)
         ip += 2
         mlen = token & 0x0F
         if mlen == 15:
             while True:
                 if ip >= len(src):
-                    raise KV3Error("truncated LZ4 match length at %d" % ip)
+                    raise KV3Error(f"truncated LZ4 match length at {ip}")
                 b = src[ip]
                 ip += 1
                 mlen += b
@@ -251,7 +251,7 @@ def lz4_block_decode(src: bytes, start: int, in_len: int, out: bytearray) -> int
                     break
         mlen += 4
         if offset == 0 or offset > len(out):
-            raise KV3Error("invalid LZ4 match offset %d" % offset)
+            raise KV3Error(f"invalid LZ4 match offset {offset}")
         if mlen > 1024 * 1024:
             raise KV3Error("LZ4 match too long")
         sp = len(out) - offset
@@ -300,7 +300,7 @@ class BinaryKV3:
         self.version = magic & 0xFF
         self.magic = magic
         if not 1 <= self.version <= 5:
-            raise KV3Error("unsupported KV3 version %d" % self.version)
+            raise KV3Error(f"unsupported KV3 version {self.version}")
         self.guid = d[4:20].hex()
         self.compression = struct.unpack_from("<I", d, 20)[0]
         self.dictionary_id = struct.unpack_from("<H", d, 24)[0]
@@ -372,29 +372,25 @@ class BinaryKV3:
         used = lz4_block_decode(d, off, self.size_compressed_buffer1, buf1)
         if used != self.size_compressed_buffer1:
             raise KV3Error(
-                "buffer1 consumed %d != declared %d"
-                % (used, self.size_compressed_buffer1)
+                f"buffer1 consumed {used} != declared {self.size_compressed_buffer1}"
             )
         off += used
         self.buffer1_consumed = used
         if len(buf1) != self.size_uncompressed_buffer1:
             raise KV3Error(
-                "buffer1 size mismatch: %d != %d"
-                % (len(buf1), self.size_uncompressed_buffer1)
+                f"buffer1 size mismatch: {len(buf1)} != {self.size_uncompressed_buffer1}"
             )
         buf2 = bytearray()
         used = lz4_block_decode(d, off, self.size_compressed_buffer2, buf2)
         if used != self.size_compressed_buffer2:
             raise KV3Error(
-                "buffer2 consumed %d != declared %d"
-                % (used, self.size_compressed_buffer2)
+                f"buffer2 consumed {used} != declared {self.size_compressed_buffer2}"
             )
         off += used
         self.buffer2_consumed = used
         if len(buf2) != self.size_uncompressed_buffer2:
             raise KV3Error(
-                "buffer2 size mismatch: %d != %d"
-                % (len(buf2), self.size_uncompressed_buffer2)
+                f"buffer2 size mismatch: {len(buf2)} != {self.size_uncompressed_buffer2}"
             )
         self.blob_data_offset = off
         self.split_buffer1(buf1)
@@ -430,7 +426,7 @@ class BinaryKV3:
         count = struct.unpack_from("<i", self.aux.b4, self.aux._i4)[0]
         self.aux._i4 += 4
         if count < 1:
-            raise KV3Error("string count must be >= 1, got %d" % count)
+            raise KV3Error(f"string count must be >= 1, got {count}")
         blob = bytes(self.aux.b1[self.aux._i1 :])
         self.aux.b1 = bytearray()
         strings = []
@@ -439,11 +435,11 @@ class BinaryKV3:
             try:
                 end = blob.index(b"\x00", pos)
             except ValueError:
-                raise KV3Error("unterminated string at index %d" % idx)
+                raise KV3Error(f"unterminated string at index {idx}")
             strings.append(blob[pos:end].decode("utf-8", "surrogateescape"))
             pos = end + 1
         if pos != len(blob):
-            raise KV3Error("string table has %d trailing bytes" % (len(blob) - pos))
+            raise KV3Error(f"string table has {len(blob) - pos} trailing bytes")
         self.strings = strings
         self.string_count_declared = count
         self.string_bytes = len(blob)
@@ -480,7 +476,7 @@ class BinaryKV3:
         if self.count_blocks:
             blob_len_bytes = buf[off : off + self.count_blocks * 4]
             self.blob_lengths = list(
-                struct.unpack_from("<%di" % self.count_blocks, blob_len_bytes, 0)
+                struct.unpack_from(f"<{self.count_blocks}i", blob_len_bytes, 0)
             )
             self.declared_blob_lengths = list(self.blob_lengths)
             off += self.count_blocks * 4
@@ -489,7 +485,7 @@ class BinaryKV3:
             if trailer != 0xFFEEDD00:
                 raise KV3Error(f"bad KV3 trailer {trailer:08x}")
             self.block_sizes = list(
-                struct.unpack_from("<%dH" % self.count_blocks, buf, off)
+                struct.unpack_from(f"<{self.count_blocks}H", buf, off)
             )
             self.declared_block_sizes = list(self.block_sizes)
             off += self.count_blocks * 2
@@ -511,7 +507,7 @@ class BinaryKV3:
                 used = lz4_block_decode(d, off, size, out)
                 if used != size:
                     raise KV3Error(
-                        "blob frame consumed %d != declared %d" % (used, size)
+                        f"blob frame consumed {used} != declared {size}"
                     )
                 off += used
         self.blob_frames_used = bi
@@ -577,9 +573,9 @@ class BinaryKV3:
             n = struct.unpack_from("<i", self.object_lengths, 0)[0]
             del self.object_lengths[:4]
             if n < 0:
-                raise KV3Error("negative object count %d" % n)
+                raise KV3Error(f"negative object count {n}")
             if n > 1000000:
-                raise KV3Error("object count too large %d" % n)
+                raise KV3Error(f"object count too large {n}")
             entries = []
             for _ in range(n):
                 key_id = self.main.take4s()
@@ -594,9 +590,9 @@ class BinaryKV3:
         elif dtype == ARRAY:
             n = self.main.take4s()
             if n < 0:
-                raise KV3Error("negative array count %d" % n)
+                raise KV3Error(f"negative array count {n}")
             if n > 1000000:
-                raise KV3Error("array count too large %d" % n)
+                raise KV3Error(f"array count too large {n}")
             node["value"] = [
                 self.read_node(self.main, depth=depth + 1) for _ in range(n)
             ]
@@ -611,7 +607,7 @@ class BinaryKV3:
                 n = lane.take1()
                 buf = self.aux
             if n < 0:
-                raise KV3Error("negative array count %d" % n)
+                raise KV3Error(f"negative array count {n}")
             sub = self.read_type()
             node["element"] = descriptor(*sub)
             node["value"] = [
@@ -698,7 +694,7 @@ class BinaryKV3:
             return 0
         if dtype == UINT32_ONE:
             return 1
-        raise KV3Error("unknown KV3 node type %d" % dtype)
+        raise KV3Error(f"unknown KV3 node type {dtype}")
 
 
 def legacy_text(text: str | None) -> str:
@@ -719,10 +715,8 @@ def to_plain(node: dict[str, Any]) -> Any:
     if dtype == "OBJECT":
         keys = [legacy_text(entry["key"]) for entry in value]
         if len(keys) != len(set(keys)):
-            import sys as _sys
-
             msg = "WARNING: duplicate object keys dropped in --plain mode"
-            print(msg, file=_sys.stderr)
+            print(msg, file=sys.stderr)
         return {legacy_text(entry["key"]): to_plain(entry["value"]) for entry in value}
     if dtype == "BINARY_BLOB":
         return base64.b64decode(value["bytes_base64"])
@@ -884,9 +878,8 @@ def load_items() -> dict[int, dict[str, Any]]:
 def build_summary(kv3: BinaryKV3, tree: dict[str, Any]) -> dict[str, Any]:
     """Summarise the saved hero builds stored in the client's build cache."""
     import pathlib as _pathlib
-    import sys as _sys
 
-    _sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parent))
+    sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parent))
     import decode_build_code as D
 
     items = load_items()
@@ -961,7 +954,7 @@ def build_summary(kv3: BinaryKV3, tree: dict[str, Any]) -> dict[str, Any]:
                             "delta": delta,
                         }
                     )
-                    key2 = "%d/%s" % (ctype, delta)
+                    key2 = f"{ctype}/{delta}"
                     ladder[key2] = ladder.get(key2, 0) + 1
             builds.append(
                 {
@@ -1074,7 +1067,7 @@ def main() -> None:
         reconfigure = getattr(sys.stdout, "reconfigure", None)
         if reconfigure is not None:
             reconfigure(encoding="utf-8", errors="replace")
-        text = "\n".join("%d\t%s" % (i, s) for i, s in enumerate(kv3.strings))
+        text = "\n".join(f"{i}\t{s}" for i, s in enumerate(kv3.strings))
         if len(text) > _MAX_OUTPUT_BYTES:
             raise KV3Error("output too large")
         if args.out:
@@ -1090,8 +1083,8 @@ def main() -> None:
         for index, length in enumerate(kv3.declared_blob_lengths):
             data = bytes(kv3.blobs[:length])
             del kv3.blobs[:length]
-            (target / ("blob_%02d.bin" % index)).write_bytes(data)
-        print("%d blobs written to %s" % (len(kv3.declared_blob_lengths), target))
+            (target / f"blob_{index:02d}.bin").write_bytes(data)
+        print(f"{len(kv3.declared_blob_lengths)} blobs written to {target}")
         return
     tree = kv3.read_tree()
     if args.builds:
