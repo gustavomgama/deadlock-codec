@@ -64,9 +64,9 @@ def parse_message(
     read = read_varint
     i = 0
     n = len(data)
-    _MAX_FIELDS = 100000
+    max_fields = 100000
     field_count = 0
-    while i < n and field_count < _MAX_FIELDS:
+    while i < n and field_count < max_fields:
         field_count += 1
         tag_start = i
         tag = data[i]
@@ -200,14 +200,14 @@ def parse_message(
                     {"offset": tag_start, "reason": f"unsupported wire type {wire}"}
                 )
             break
-    if field_count >= _MAX_FIELDS and i < n and issues is not None:
+    if field_count >= max_fields and i < n and issues is not None:
         issues.append({"offset": i, "reason": "field count limit reached"})
     return out
 
 
 def get_str(fields: list[tuple[int, int, Any]], num: int) -> str | None:
     """Return the first string value for field num, if present."""
-    for f, w, v in fields:
+    for f, _, v in fields:
         if f == num and isinstance(v, tuple) and v[0] == "str":
             return v[1]
     return None
@@ -223,7 +223,7 @@ def get_int(fields: list[tuple[int, int, Any]], num: int) -> int | None:
 
 def get_float(fields: list[tuple[int, int, Any]], num: int) -> float | None:
     """Return the first float value for field num, if present."""
-    for f, w, v in fields:
+    for f, _, v in fields:
         if f == num and isinstance(v, float):
             return v
     return None
@@ -234,7 +234,7 @@ def get_msgs(
 ) -> list[list[tuple[int, int, Any]]]:
     """Return nested messages stored under field num."""
     res = []
-    for f, w, v in fields:
+    for f, _, v in fields:
         if f == num and isinstance(v, tuple) and v[0] == "msg":
             res.append(v[1])
     return res
@@ -292,7 +292,7 @@ def _decompress(raw: bytes, max_output_size: int = 10 * 1024 * 1024) -> bytes:
         with decompressor.stream_reader(io.BytesIO(raw)) as reader:
             result = reader.read(max_output_size + 1)
             if len(result) > max_output_size:
-                raise ValueError("decompressed output exceeds limit")
+                raise ValueError("decompressed output exceeds limit") from None
             return result
 
 
@@ -317,7 +317,7 @@ def _payload(code: str) -> tuple[bytes, bool, int, str, str, bool]:
             alphabet = "urlsafe"
             padding = len(normalized) % 4 != 0
         except ValueError as e2:
-            raise ValueError(f"invalid base64: {e1}; urlsafe: {e2}")
+            raise ValueError(f"invalid base64: {e1}; urlsafe: {e2}") from e2
     if not raw:
         raise ValueError("invalid base64")
     if len(raw) > _MAX_INPUT_BYTES:
@@ -328,7 +328,7 @@ def _payload(code: str) -> tuple[bytes, bool, int, str, str, bool]:
         try:
             raw = _decompress(raw)
         except (ValueError, RuntimeError, OSError) as e:
-            raise ValueError(f"zstd decompress failed: {e}")
+            raise ValueError(f"zstd decompress failed: {e}") from e
     return raw, compressed, stored, normalized, alphabet, padding
 
 
@@ -384,10 +384,7 @@ def decode_build_code(code: str, layout: str = "auto") -> dict[str, Any]:
     else:
         resolved_hero_id = hero_id
     version = _signed(get_int(top, 2))
-    if hero_field == 2:
-        hero_build_id = _signed(get_int(top, 1))
-    else:
-        hero_build_id = _signed(get_int(top, 3))
+    hero_build_id = _signed(get_int(top, 1)) if hero_field == 2 else _signed(get_int(top, 3))
     author_account_id = _signed(get_int(top, 4))
     name = get_str(top, 5)
     description = get_str(top, 6)
@@ -396,7 +393,7 @@ def decode_build_code(code: str, layout: str = "auto") -> dict[str, Any]:
     field_9 = _signed(get_int(top, 9))
     field_13 = _signed(get_int(top, 13))
     tags = []
-    for f, w, v in top:
+    for f, _, v in top:
         if f == 11 and not isinstance(v, tuple):
             tags.append(_signed(v))
         elif f == 11 and isinstance(v, tuple) and v[0] == "bytes":
@@ -404,14 +401,14 @@ def decode_build_code(code: str, layout: str = "auto") -> dict[str, Any]:
     if layout == "cached":
         author_account_id = None
     detail_msgs = [
-        v[1] for f, w, v in top if f == 10 and isinstance(v, tuple) and v[0] == "msg"
+        v[1] for f, _, v in top if f == 10 and isinstance(v, tuple) and v[0] == "msg"
     ]
     mod_categories = []
     ability_order = None
     for details in detail_msgs:
         for cat_msg in get_msgs(details, 1):
             mods = []
-            for f, w, v in cat_msg:
+            for f, _, v in cat_msg:
                 if f == 1:
                     if isinstance(v, tuple) and v[0] == "msg":
                         aid = get_int(v[1], 1)
@@ -426,10 +423,10 @@ def decode_build_code(code: str, layout: str = "auto") -> dict[str, Any]:
                 "width": get_float(cat_msg, 5),
                 "mods": mods,
             }
-            if any(f == 6 and not isinstance(v, tuple) and v for f, w, v in cat_msg):
+            if any(f == 6 and not isinstance(v, tuple) and v for f, _, v in cat_msg):
                 cat["optional"] = True
             mod_categories.append(cat)
-        for f, w, v in details:
+        for f, _, v in details:
             if f == 2 and isinstance(v, tuple) and v[0] == "msg":
                 ability_order = v[1]
     ability_changes = []
@@ -523,14 +520,14 @@ def read_input(arg: str) -> str:
     if path.stat().st_size > _MAX_INPUT_BYTES:
         raise ValueError("input file too large")
     try:
-        with open(arg, encoding="utf-8") as fh:
+        with pathlib.Path(arg).open(encoding="utf-8") as fh:
             data = fh.read(_MAX_INPUT_BYTES + 1)
             if len(data) > _MAX_INPUT_BYTES:
                 raise ValueError("input file too large")
             return data
     except UnicodeDecodeError:
         try:
-            with open(arg, encoding="utf-16") as fh:
+            with pathlib.Path(arg).open(encoding="utf-16") as fh:
                 data = fh.read(_MAX_INPUT_BYTES + 1)
                 if len(data) > _MAX_INPUT_BYTES:
                     raise ValueError("input file too large")

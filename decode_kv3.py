@@ -434,7 +434,7 @@ class BinaryKV3:
             try:
                 end = blob.index(b"\x00", pos)
             except ValueError:
-                raise KV3Error(f"unterminated string at index {idx}")
+                raise KV3Error(f"unterminated string at index {idx}") from None
             strings.append(blob[pos:end].decode("utf-8", "surrogateescape"))
             pos = end + 1
         if pos != len(blob):
@@ -859,7 +859,7 @@ def decode(path: str) -> BinaryKV3:
         kv3.read_header()
         kv3.read_payload()
     except struct.error as e:
-        raise KV3Error(f"truncated KV3 file: {e}")
+        raise KV3Error(f"truncated KV3 file: {e}") from e
     return kv3
 
 
@@ -917,21 +917,21 @@ def build_summary(kv3: BinaryKV3, tree: dict[str, Any]) -> dict[str, Any]:
                     mid = D.get_int(mod, 1)
                     if mid is not None:
                         mods.append(mid)
-                for f, w, v in cat:
+                for f, _, v in cat:
                     if f == 1 and not isinstance(v, tuple):
                         mods.append(v)
                 entry = {
                     "name": name,
                     "description": D.get_str(cat, 3),
                     "optional": any(
-                        f == 6 and not isinstance(v, tuple) for f, w, v in cat
+                        f == 6 and not isinstance(v, tuple) for f, _, v in cat
                     ),
                     "height": next(
-                        (v for f, w, v in cat if f == 4 and not isinstance(v, tuple)),
+                        (v for f, _, v in cat if f == 4 and not isinstance(v, tuple)),
                         None,
                     ),
                     "width": next(
-                        (v for f, w, v in cat if f == 5 and not isinstance(v, tuple)),
+                        (v for f, _, v in cat if f == 5 and not isinstance(v, tuple)),
                         None,
                     ),
                     "mods": mods,

@@ -1,0 +1,21 @@
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "C4", "UP", "SIM", "PTH", "RUF", "RET", "PERF", "S", "N", "ARG"]
+ignore = ["N812", "S101"]
+
+[tool.pylint.main]
+py-version = "3.13"
+jobs = 0
+
+[tool.pylint.format]
+max-line-length = 100
+
+[tool.pylint.messages_control]
+disable = ["missing-module-docstring", "missing-function-docstring", "too-many-locals", "too-many-branches", "too-many-statements", "too-many-arguments", "too-many-instance-attributes"]
+
+[tool.bandit]
+exclude_dirs = [".venv", "tests"]
+skips = []

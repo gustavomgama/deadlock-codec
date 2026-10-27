@@ -165,7 +165,7 @@ def read_input(arg: str) -> str:
         return arg
     if p.stat().st_size > _MAX_INPUT_BYTES:
         raise ValueError("input file too large")
-    with open(arg, encoding="utf-8") as fh:
+    with pathlib.Path(arg).open(encoding="utf-8") as fh:
         data = fh.read(_MAX_INPUT_BYTES + 1)
     if len(data) > _MAX_INPUT_BYTES:
         raise ValueError("input file too large")
