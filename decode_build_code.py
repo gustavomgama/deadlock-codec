@@ -5,7 +5,7 @@ import json
 import pathlib
 import struct
 import sys
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 _ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 _DEFAULT_BUILD_HERO_OFFSET = 1000
@@ -13,7 +13,7 @@ _MAX_INPUT_BYTES = 16 * 1024 * 1024
 _MAX_OUTPUT_BYTES = 64 * 1024 * 1024
 
 
-def read_varint(data: bytes, i: int) -> Tuple[Optional[int], int]:
+def read_varint(data: bytes, i: int) -> tuple[int | None, int]:
     """Read a protobuf-style varint from data starting at offset i."""
     res = 0
     shift = 0
@@ -50,10 +50,10 @@ def _is_text(chunk: bytes) -> bool:
 
 def parse_message(
     data: bytes,
-    issues: Optional[List[Dict[str, Any]]] = None,
+    issues: list[dict[str, Any]] | None = None,
     depth: int = 0,
     max_depth: int = 64,
-) -> List[Tuple[int, int, Any]]:
+) -> list[tuple[int, int, Any]]:
     """Parse protobuf bytes into a list of (field_number, wire_type, value) tuples."""
     if depth > max_depth:
         if issues is not None:
@@ -200,13 +200,12 @@ def parse_message(
                     {"offset": tag_start, "reason": "unsupported wire type %d" % wire}
                 )
             break
-    if field_count >= _MAX_FIELDS and i < n:
-        if issues is not None:
-            issues.append({"offset": i, "reason": "field count limit reached"})
+    if field_count >= _MAX_FIELDS and i < n and issues is not None:
+        issues.append({"offset": i, "reason": "field count limit reached"})
     return out
 
 
-def get_str(fields: List[Tuple[int, int, Any]], num: int) -> Optional[str]:
+def get_str(fields: list[tuple[int, int, Any]], num: int) -> str | None:
     """Return the first string value for field num, if present."""
     for f, w, v in fields:
         if f == num and isinstance(v, tuple) and v[0] == "str":
@@ -214,7 +213,7 @@ def get_str(fields: List[Tuple[int, int, Any]], num: int) -> Optional[str]:
     return None
 
 
-def get_int(fields: List[Tuple[int, int, Any]], num: int) -> Optional[int]:
+def get_int(fields: list[tuple[int, int, Any]], num: int) -> int | None:
     """Return the first integer value for field num, if present."""
     for f, w, v in fields:
         if f == num and w in (0, 1) and isinstance(v, int) and not isinstance(v, bool):
@@ -222,7 +221,7 @@ def get_int(fields: List[Tuple[int, int, Any]], num: int) -> Optional[int]:
     return None
 
 
-def get_float(fields: List[Tuple[int, int, Any]], num: int) -> Optional[float]:
+def get_float(fields: list[tuple[int, int, Any]], num: int) -> float | None:
     """Return the first float value for field num, if present."""
     for f, w, v in fields:
         if f == num and isinstance(v, float):
@@ -231,8 +230,8 @@ def get_float(fields: List[Tuple[int, int, Any]], num: int) -> Optional[float]:
 
 
 def get_msgs(
-    fields: List[Tuple[int, int, Any]], num: int
-) -> List[List[Tuple[int, int, Any]]]:
+    fields: list[tuple[int, int, Any]], num: int
+) -> list[list[tuple[int, int, Any]]]:
     """Return nested messages stored under field num."""
     res = []
     for f, w, v in fields:
@@ -253,7 +252,7 @@ def _signed(value: Any) -> Any:
 _WIRE_NAMES = {0: "varint", 1: "fixed64", 2: "bytes", 5: "fixed32"}
 
 
-def _raw_fields(fields: List[Tuple[int, int, Any]]) -> List[Dict[str, Any]]:
+def _raw_fields(fields: list[tuple[int, int, Any]]) -> list[dict[str, Any]]:
     """Render parsed fields as lossless dictionaries."""
     out = []
     for field, wire, value in fields:
@@ -284,7 +283,7 @@ def _decompress(raw: bytes, max_output_size: int = 10 * 1024 * 1024) -> bytes:
     decompressor = zstandard.ZstdDecompressor()
     try:
         return decompressor.decompress(raw, max_output_size=max_output_size)
-    except Exception:
+    except (ValueError, RuntimeError, OSError, zstandard.ZstdError):
         with decompressor.stream_reader(io.BytesIO(raw)) as reader:
             result = reader.read(max_output_size + 1)
             if len(result) > max_output_size:
@@ -292,10 +291,10 @@ def _decompress(raw: bytes, max_output_size: int = 10 * 1024 * 1024) -> bytes:
             return result
 
 
-def _payload(code: str) -> Tuple[bytes, bool, int, str, str, bool]:
+def _payload(code: str) -> tuple[bytes, bool, int, str, str, bool]:
     """Decode the base64/zstd envelope of a build code."""
     if not isinstance(code, str):
-        raise ValueError("input must be a string")
+        raise TypeError("input must be a string")
     normalized = "".join(code.split())
     if not normalized:
         raise ValueError("empty input")
@@ -305,15 +304,15 @@ def _payload(code: str) -> Tuple[bytes, bool, int, str, str, bool]:
     padding = False
     try:
         raw = base64.b64decode(normalized, validate=True)
-    except Exception as e1:
+    except ValueError as e1:
         try:
             raw = base64.b64decode(
                 normalized + "=" * (-len(normalized) % 4), altchars=b"-_", validate=True
             )
             alphabet = "urlsafe"
             padding = len(normalized) % 4 != 0
-        except Exception as e2:
-            raise ValueError("invalid base64: %s; urlsafe: %s" % (e1, e2))
+        except ValueError as e2:
+            raise ValueError(f"invalid base64: {e1}; urlsafe: {e2}")
     if not raw:
         raise ValueError("invalid base64")
     if len(raw) > _MAX_INPUT_BYTES:
@@ -323,12 +322,12 @@ def _payload(code: str) -> Tuple[bytes, bool, int, str, str, bool]:
     if compressed:
         try:
             raw = _decompress(raw)
-        except Exception as e:
-            raise ValueError("zstd decompress failed: %s" % e)
+        except (ValueError, RuntimeError, OSError) as e:
+            raise ValueError(f"zstd decompress failed: {e}")
     return raw, compressed, stored, normalized, alphabet, padding
 
 
-def _field_map(fields: List[Tuple[int, int, Any]]) -> Dict[str, List[Any]]:
+def _field_map(fields: list[tuple[int, int, Any]]) -> dict[str, list[Any]]:
     """Group parsed fields by field number for JSON output."""
     out = {}
     for field, wire, value in fields:
@@ -348,8 +347,8 @@ def _field_map(fields: List[Tuple[int, int, Any]]) -> Dict[str, List[Any]]:
 
 
 def _cached_candidate(
-    message: List[Tuple[int, int, Any]],
-    issues: Optional[List[Dict[str, Any]]] = None,
+    message: list[tuple[int, int, Any]],
+    issues: list[dict[str, Any]] | None = None,
 ) -> bool:
     """Detect whether a message uses the cached build layout."""
     hero = get_int(message, 2)
@@ -361,16 +360,14 @@ def _cached_candidate(
                 {"offset": 0, "reason": "inconclusive cached-layout hero id 0"}
             )
         return False
-    if hero >= _DEFAULT_BUILD_HERO_OFFSET:
-        return False
-    return True
+    return hero < _DEFAULT_BUILD_HERO_OFFSET
 
 
-def decode_build_code(code: str, layout: str = "auto") -> Dict[str, Any]:
+def decode_build_code(code: str, layout: str = "auto") -> dict[str, Any]:
     """Decode a Deadlock build code into a structured dictionary."""
     if not isinstance(code, str):
-        raise ValueError("code must be a string")
-    raw, _, _, normalized, _, _ = _payload(code)
+        raise TypeError("code must be a string")
+    raw, _, _, _, _, _ = _payload(code)
     issues = []
     top = parse_message(raw, issues)
     hero_field = 1
@@ -486,7 +483,7 @@ def decode_build_code(code: str, layout: str = "auto") -> Dict[str, Any]:
     }
 
 
-def raw_document(code: str, include_payload_base64: bool = True) -> Dict[str, Any]:
+def raw_document(code: str, include_payload_base64: bool = True) -> dict[str, Any]:
     """Build a lossless protobuf dump of a build code."""
     raw, compressed, stored, normalized, alphabet, padding = _payload(code)
     issues = []
@@ -510,7 +507,7 @@ def raw_document(code: str, include_payload_base64: bool = True) -> Dict[str, An
     }
 
 
-def _packed_varints(data: bytes) -> List[int]:
+def _packed_varints(data: bytes) -> list[int]:
     """Decode a packed repeated varint field."""
     out = []
     i = 0
@@ -539,14 +536,14 @@ def read_input(arg: str) -> str:
     if path.stat().st_size > _MAX_INPUT_BYTES:
         raise ValueError("input file too large")
     try:
-        with open(arg, "r", encoding="utf-8") as fh:
+        with open(arg, encoding="utf-8") as fh:
             data = fh.read(_MAX_INPUT_BYTES + 1)
             if len(data) > _MAX_INPUT_BYTES:
                 raise ValueError("input file too large")
             return data
     except UnicodeDecodeError:
         try:
-            with open(arg, "r", encoding="utf-16") as fh:
+            with open(arg, encoding="utf-16") as fh:
                 data = fh.read(_MAX_INPUT_BYTES + 1)
                 if len(data) > _MAX_INPUT_BYTES:
                     raise ValueError("input file too large")
@@ -565,21 +562,21 @@ def self_test() -> None:
         / "examplecodefromgame.md"
     )
     if not example.exists():
-        raise SystemExit("self-test needs %s" % example)
+        raise SystemExit(f"self-test needs {example}")
     code = read_input(str(example))
     shared = decode_build_code(code)
     if shared["hero_id"] != 1034:
-        raise AssertionError("hero_id %s" % shared["hero_id"])
+        raise AssertionError("hero_id {}".format(shared["hero_id"]))
     if shared["hero"] != 34:
-        raise AssertionError("hero %s" % shared["hero"])
+        raise AssertionError("hero {}".format(shared["hero"]))
     if shared["is_default_build"] is not True:
         raise AssertionError("is_default_build")
     if shared["layout"] != "shared":
-        raise AssertionError("layout %s" % shared["layout"])
+        raise AssertionError("layout {}".format(shared["layout"]))
     if shared["issues"]:
-        raise AssertionError("issues %s" % shared["issues"])
+        raise AssertionError("issues {}".format(shared["issues"]))
     if len(shared["details"]["mod_categories"]) != 3:
-        raise AssertionError("categories %s" % shared["details"])
+        raise AssertionError("categories {}".format(shared["details"]))
     if not raw_document(code)["input"]["zstd"]:
         raise AssertionError("zstd")
     try:
@@ -637,8 +634,8 @@ def main() -> None:
                 fh.write("\n")
         else:
             print(text)
-    except Exception as e:
-        print("ERROR: %s" % e, file=sys.stderr)
+    except (ValueError, OSError, RuntimeError, TypeError, KeyError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 
 

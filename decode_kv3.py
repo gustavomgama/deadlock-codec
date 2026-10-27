@@ -29,7 +29,7 @@ import json
 import pathlib
 import struct
 import sys
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 MAGIC0 = 0x03564B56
 MAGIC5 = 0x4B563305
@@ -81,8 +81,8 @@ TYPED_ARRAYS = frozenset(
 
 
 def descriptor(
-    dtype: int, flags: Optional[int], extra: Optional[int]
-) -> Dict[str, Any]:
+    dtype: int, flags: int | None, extra: int | None
+) -> dict[str, Any]:
     """Build a descriptor dict for a KV3 node type byte."""
     node: dict[str, Any] = {"type": TYPE_NAMES.get(dtype, "UNKNOWN_%d" % dtype)}
     if flags is not None:
@@ -94,7 +94,6 @@ def descriptor(
 
 class KV3Error(Exception):
     """Exception raised for malformed or unsupported KV3 input."""
-    pass
 
 
 class Lanes:
@@ -128,6 +127,8 @@ class Lanes:
 
     def take1(self) -> int:
         """Consume and return one byte from the 1-byte lane."""
+        if self._i1 >= len(self.b1):
+            raise KV3Error("truncated 1-byte lane")
         v = self.b1[self._i1]
         self._i1 += 1
         self._trim()
@@ -135,6 +136,8 @@ class Lanes:
 
     def take2(self) -> int:
         """Consume and return an unsigned 16-bit value from the 2-byte lane."""
+        if self._i2 + 2 > len(self.b2):
+            raise KV3Error("truncated 2-byte lane")
         v = struct.unpack_from("<H", self.b2, self._i2)[0]
         self._i2 += 2
         self._trim()
@@ -142,6 +145,8 @@ class Lanes:
 
     def take4(self) -> int:
         """Consume and return an unsigned 32-bit value from the 4-byte lane."""
+        if self._i4 + 4 > len(self.b4):
+            raise KV3Error("truncated 4-byte lane")
         v = struct.unpack_from("<I", self.b4, self._i4)[0]
         self._i4 += 4
         self._trim()
@@ -149,6 +154,8 @@ class Lanes:
 
     def take4s(self) -> int:
         """Consume and return a signed 32-bit value from the 4-byte lane."""
+        if self._i4 + 4 > len(self.b4):
+            raise KV3Error("truncated 4-byte lane")
         v = struct.unpack_from("<i", self.b4, self._i4)[0]
         self._i4 += 4
         self._trim()
@@ -156,6 +163,8 @@ class Lanes:
 
     def take8(self) -> int:
         """Consume and return an unsigned 64-bit value from the 8-byte lane."""
+        if self._i8 + 8 > len(self.b8):
+            raise KV3Error("truncated 8-byte lane")
         v = struct.unpack_from("<Q", self.b8, self._i8)[0]
         self._i8 += 8
         self._trim()
@@ -163,6 +172,8 @@ class Lanes:
 
     def take8f(self) -> float:
         """Consume and return a double-precision value from the 8-byte lane."""
+        if self._i8 + 8 > len(self.b8):
+            raise KV3Error("truncated 8-byte lane")
         v = struct.unpack_from("<d", self.b8, self._i8)[0]
         self._i8 += 8
         self._trim()
@@ -285,7 +296,7 @@ class BinaryKV3:
         if magic == MAGIC0:
             raise KV3Error("VKV3 block-compressed KV3 is not supported")
         if magic & 0xFFFFFF00 != 0x4B563300:
-            raise KV3Error("not a binary KV3 file (magic %08x)" % magic)
+            raise KV3Error(f"not a binary KV3 file (magic {magic:08x})")
         self.version = magic & 0xFF
         self.magic = magic
         if not 1 <= self.version <= 5:
@@ -354,8 +365,8 @@ class BinaryKV3:
         off = self.data_offset
         if self.compression != 1:
             raise KV3Error(
-                "only LZ4 compressed KV3 is supported (got %s)"
-                % COMPRESSION_NAMES.get(self.compression, self.compression)
+                "only LZ4 compressed KV3 is supported "
+                f"(got {COMPRESSION_NAMES.get(self.compression, self.compression)})"
             )
         buf1 = bytearray()
         used = lz4_block_decode(d, off, self.size_compressed_buffer1, buf1)
@@ -476,7 +487,7 @@ class BinaryKV3:
             trailer = struct.unpack_from("<I", buf, off)[0]
             off += 4
             if trailer != 0xFFEEDD00:
-                raise KV3Error("bad KV3 trailer %08x" % trailer)
+                raise KV3Error(f"bad KV3 trailer {trailer:08x}")
             self.block_sizes = list(
                 struct.unpack_from("<%dH" % self.count_blocks, buf, off)
             )
@@ -509,42 +520,50 @@ class BinaryKV3:
         self.trailer = d[off : off + 4]
 
     # -- tree -------------------------------------------------------------
-    def read_type(self) -> Tuple[int, Optional[int], Optional[int]]:
+    def read_type(self) -> tuple[int, int | None, int | None]:
         """Read and decode one KV3 node type byte with flags/extra."""
+        if not self.types:
+            raise KV3Error("truncated type stream")
         b = self.types[0]
         del self.types[0]
         flags = extra = None
         if self.version >= 3:
             if b & 0x80:
+                if not self.types:
+                    raise KV3Error("truncated type flags")
                 flags = self.types[0]
                 del self.types[0]
             if b & 0x40:
+                if not self.types:
+                    raise KV3Error("truncated type extra")
                 extra = self.types[0]
                 del self.types[0]
             b &= 0x3F
         else:
             if b & 0x80:
+                if not self.types:
+                    raise KV3Error("truncated type flags")
                 flags = self.types[0]
                 del self.types[0]
             b &= 0x7F
         return b, flags, extra
 
-    def get_string(self, sid: int) -> Optional[str]:
+    def get_string(self, sid: int) -> str | None:
         """Look up a string by its table id."""
         if 0 <= sid < len(self.strings):
             return self.strings[sid]
         return None
 
-    def read_tree(self) -> Dict[str, Any]:
+    def read_tree(self) -> dict[str, Any]:
         """Read the root KV3 node as a document tree."""
         return self.read_node(self.main)
 
     def read_node(
         self,
         lane: "Lanes",
-        declared: Optional[Tuple[int, Optional[int], Optional[int]]] = None,
+        declared: tuple[int, int | None, int | None] | None = None,
         depth: int = 0,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Read one KV3 node from the given value lane."""
         if depth > 64:
             raise KV3Error("max recursion depth exceeded")
@@ -603,6 +622,8 @@ class BinaryKV3:
             node["string_id"] = sid
             node["value"] = self.get_string(sid)
         elif dtype == BINARY_BLOB:
+            if not self.blob_lengths:
+                raise KV3Error("missing blob length")
             length = self.blob_lengths.pop(0)
             value = bytes(self.blobs[:length])
             del self.blobs[:length]
@@ -624,10 +645,14 @@ class BinaryKV3:
         if dtype == DOUBLE:
             return lane.take8f()
         if dtype == INT32:
+            if lane._i4 + 4 > len(lane.b4):
+                raise KV3Error("truncated int32 lane")
             v = struct.unpack_from("<i", lane.b4, lane._i4)[0]
             lane.take4()
             return v
         if dtype == UINT32:
+            if lane._i4 + 4 > len(lane.b4):
+                raise KV3Error("truncated uint32 lane")
             v = struct.unpack_from("<I", lane.b4, lane._i4)[0]
             lane.take4()
             return v
@@ -644,18 +669,26 @@ class BinaryKV3:
         if dtype == DOUBLE_ONE:
             return 1.0
         if dtype == FLOAT:
+            if lane._i4 + 4 > len(lane.b4):
+                raise KV3Error("truncated float lane")
             v = struct.unpack_from("<f", lane.b4, lane._i4)[0]
             lane.take4()
             return v
         if dtype == INT16:
+            if lane._i2 + 2 > len(lane.b2):
+                raise KV3Error("truncated int16 lane")
             v = struct.unpack_from("<h", lane.b2, lane._i2)[0]
             lane.take2()
             return v
         if dtype == UINT16:
+            if lane._i2 + 2 > len(lane.b2):
+                raise KV3Error("truncated uint16 lane")
             v = struct.unpack_from("<H", lane.b2, lane._i2)[0]
             lane.take2()
             return v
         if dtype == INT8:
+            if lane._i1 >= len(lane.b1):
+                raise KV3Error("truncated int8 lane")
             v = struct.unpack_from("<b", lane.b1, lane._i1)[0]
             lane.take1()
             return v
@@ -668,7 +701,7 @@ class BinaryKV3:
         raise KV3Error("unknown KV3 node type %d" % dtype)
 
 
-def legacy_text(text: Optional[str]) -> str:
+def legacy_text(text: str | None) -> str:
     """Coerce a string to a legacy UTF-8-safe representation."""
     if text is None:
         return ""
@@ -679,7 +712,7 @@ def legacy_text(text: Optional[str]) -> str:
     return text
 
 
-def to_plain(node: Dict[str, Any]) -> Any:
+def to_plain(node: dict[str, Any]) -> Any:
     """Convert a typed KV3 node tree into plain Python values."""
     dtype = node["type"]
     value: Any = node.get("value")
@@ -700,10 +733,10 @@ def to_plain(node: Dict[str, Any]) -> Any:
     return value
 
 
-def header_document(kv3: BinaryKV3) -> Dict[str, Any]:
+def header_document(kv3: BinaryKV3) -> dict[str, Any]:
     """Build the JSON header section for a decoded KV3 document."""
     return {
-        "magic": "0x%08X" % kv3.magic,
+        "magic": f"0x{kv3.magic:08X}",
         "version": kv3.version,
         "guid": kv3.guid,
         "compression": kv3.compression,
@@ -737,7 +770,7 @@ def header_document(kv3: BinaryKV3) -> Dict[str, Any]:
     }
 
 
-def payload_document(kv3: BinaryKV3) -> Dict[str, Any]:
+def payload_document(kv3: BinaryKV3) -> dict[str, Any]:
     """Build the JSON payload metadata section for a decoded KV3 document."""
     return {
         "string_count": len(kv3.strings),
@@ -746,7 +779,7 @@ def payload_document(kv3: BinaryKV3) -> Dict[str, Any]:
     }
 
 
-def lane_usage(lanes: Lanes) -> Dict[str, int]:
+def lane_usage(lanes: Lanes) -> dict[str, int]:
     """Report remaining unconsumed bytes across all lanes."""
     return {
         "b1": lanes.remaining1,
@@ -756,7 +789,7 @@ def lane_usage(lanes: Lanes) -> Dict[str, int]:
     }
 
 
-def completeness(kv3: BinaryKV3) -> Dict[str, Any]:
+def completeness(kv3: BinaryKV3) -> dict[str, Any]:
     """Build the completeness/accounting section for a decoded KV3 document."""
     return {
         "file_size": len(kv3.data),
@@ -802,7 +835,7 @@ def completeness(kv3: BinaryKV3) -> Dict[str, Any]:
     }
 
 
-def document(kv3: BinaryKV3, tree: Dict[str, Any]) -> Dict[str, Any]:
+def document(kv3: BinaryKV3, tree: dict[str, Any]) -> dict[str, Any]:
     """Assemble the full JSON document for a decoded KV3 file."""
     return {
         "schema_version": 1,
@@ -818,9 +851,9 @@ def decode(path: str) -> BinaryKV3:
     """Decode a binary KV3 file from disk."""
     p = pathlib.Path(path)
     if not p.exists():
-        raise KV3Error("file not found: %s" % path)
+        raise KV3Error(f"file not found: {path}")
     if not p.is_file():
-        raise KV3Error("not a file: %s" % path)
+        raise KV3Error(f"not a file: {path}")
     if p.stat().st_size > _MAX_INPUT_BYTES:
         raise KV3Error("input file too large")
     data = p.read_bytes()
@@ -833,14 +866,14 @@ def decode(path: str) -> BinaryKV3:
         kv3.read_header()
         kv3.read_payload()
     except struct.error as e:
-        raise KV3Error("truncated KV3 file: %s" % e)
+        raise KV3Error(f"truncated KV3 file: {e}")
     return kv3
 
 
 decode_kv3 = decode
 
 
-def load_items() -> Dict[int, Dict[str, Any]]:
+def load_items() -> dict[int, dict[str, Any]]:
     """Load the item reference table from data/items_raw.json."""
     path = pathlib.Path(__file__).resolve().parent / "data" / "items_raw.json"
     if not path.exists():
@@ -848,7 +881,7 @@ def load_items() -> Dict[int, Dict[str, Any]]:
     return {i["id"]: i for i in json.loads(path.read_text(encoding="utf-8"))}
 
 
-def build_summary(kv3: BinaryKV3, tree: Dict[str, Any]) -> Dict[str, Any]:
+def build_summary(kv3: BinaryKV3, tree: dict[str, Any]) -> dict[str, Any]:
     """Summarise the saved hero builds stored in the client's build cache."""
     import pathlib as _pathlib
     import sys as _sys
@@ -858,7 +891,7 @@ def build_summary(kv3: BinaryKV3, tree: Dict[str, Any]) -> Dict[str, Any]:
 
     items = load_items()
 
-    def resolve(item_id: int) -> Optional[Dict[str, Any]]:
+    def resolve(item_id: int) -> dict[str, Any] | None:
         """Resolve an item id to its name, class, and type."""
         item = items.get(item_id)
         if not item:
@@ -946,7 +979,7 @@ def build_summary(kv3: BinaryKV3, tree: Dict[str, Any]) -> Dict[str, Any]:
             )
     return {
         "kv3": {
-            "magic": "0x%08X" % kv3.magic,
+            "magic": f"0x{kv3.magic:08X}",
             "version": kv3.version,
             "compression": "lz4" if kv3.compression == 1 else kv3.compression,
             "guid": kv3.guid,
@@ -962,7 +995,7 @@ def build_summary(kv3: BinaryKV3, tree: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def self_test(kv3: BinaryKV3, tree: Dict[str, Any]) -> None:
+def self_test(kv3: BinaryKV3, tree: dict[str, Any]) -> None:
     """Check the decoder against the structure of the client's build cache."""
     summary = build_summary(kv3, tree)
     assert kv3.version == 5, "not KV3 v5"
@@ -1038,10 +1071,9 @@ def main() -> None:
         self_test(kv3, to_plain(kv3.read_tree()))
         return
     if args.strings_only:
-        try:
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
-        except Exception:
-            pass
+        reconfigure = getattr(sys.stdout, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
         text = "\n".join("%d\t%s" % (i, s) for i, s in enumerate(kv3.strings))
         if len(text) > _MAX_OUTPUT_BYTES:
             raise KV3Error("output too large")
@@ -1082,7 +1114,9 @@ def main() -> None:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text + "\n", encoding="utf-8")
     else:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+        reconfigure = getattr(sys.stdout, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
         print(text)
 
 
@@ -1090,11 +1124,11 @@ if __name__ == "__main__":
     try:
         main()
     except KV3Error as exc:
-        print("KV3_ERROR %s" % exc, file=sys.stderr)
+        print(f"KV3_ERROR {exc}", file=sys.stderr)
         sys.exit(1)
     except struct.error as exc:
-        print("KV3_ERROR %s" % exc, file=sys.stderr)
+        print(f"KV3_ERROR {exc}", file=sys.stderr)
         sys.exit(1)
-    except Exception as exc:
-        print("ERROR: %s" % exc, file=sys.stderr)
+    except (ValueError, OSError, RuntimeError, TypeError, KeyError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)

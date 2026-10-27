@@ -9,3 +9,4 @@ data/cached_hero_builds.json
 .ouroboros/traces/
 .ouroboros/seed.yaml
 python/tests/fixtures/tmp_build.json
+tests/

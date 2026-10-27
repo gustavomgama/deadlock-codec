@@ -4,7 +4,7 @@ import json
 import pathlib
 import struct
 import sys
-from typing import Any, Dict, Optional
+from typing import Any
 
 import zstandard
 
@@ -12,7 +12,7 @@ _MAX_INPUT_BYTES = 16 * 1024 * 1024
 _MAX_OUTPUT_BYTES = 64 * 1024 * 1024
 
 
-def _compressor(level: Optional[int] = None) -> zstandard.ZstdCompressor:
+def _compressor(level: int | None = None) -> zstandard.ZstdCompressor:
     """Build a zstd compressor for the requested level."""
     if level is None:
         return zstandard.ZstdCompressor()
@@ -48,7 +48,7 @@ def encode_mod(mid: int) -> bytes:
     return encode_field(1, 0, encode_varint(mid))
 
 
-def encode_category(cat: Dict[str, Any]) -> bytes:
+def encode_category(cat: dict[str, Any]) -> bytes:
     """Encode a mod category message."""
     parts = bytearray()
     for mid in cat.get("mods") or []:
@@ -67,7 +67,7 @@ def encode_category(cat: Dict[str, Any]) -> bytes:
     return bytes(parts)
 
 
-def encode_cc(cc: Dict[str, Any]) -> bytes:
+def encode_cc(cc: dict[str, Any]) -> bytes:
     """Encode a currency change message."""
     parts = bytearray()
     if cc.get("ability_id") is not None:
@@ -81,7 +81,7 @@ def encode_cc(cc: Dict[str, Any]) -> bytes:
     return bytes(parts)
 
 
-def encode_details(details: Dict[str, Any]) -> bytes:
+def encode_details(details: dict[str, Any]) -> bytes:
     """Encode the details message containing categories and ability order."""
     parts = bytearray()
     for cat in details.get("mod_categories") or []:
@@ -97,7 +97,7 @@ def encode_details(details: Dict[str, Any]) -> bytes:
     return bytes(parts)
 
 
-def encode_build(obj: Dict[str, Any], level: Optional[int] = None) -> str:
+def encode_build(obj: dict[str, Any], level: int | None = None) -> str:
     """Encode a build dictionary into a Deadlock build code."""
     layout = obj.get("layout")
     cached = layout == "cached"
@@ -158,7 +158,7 @@ def read_input(arg: str) -> str:
         p = pathlib.Path(arg)
         if p.exists() and p.is_file() and p.stat().st_size > _MAX_INPUT_BYTES:
             raise ValueError("input file too large")
-        with open(arg, "r", encoding="utf-8") as fh:
+        with open(arg, encoding="utf-8") as fh:
             data = fh.read(_MAX_INPUT_BYTES + 1)
             if len(data) > _MAX_INPUT_BYTES:
                 raise ValueError("input file too large")
@@ -179,7 +179,7 @@ def self_test() -> None:
         pathlib.Path(__file__).resolve().parent / "data" / "examplecodefromgame.md"
     )
     if not example.exists():
-        raise SystemExit("self-test needs %s" % example)
+        raise SystemExit(f"self-test needs {example}")
     code = D.read_input(str(example))
     decoded = D.decode_build_code(code)
     encoded = encode_build(decoded)
@@ -227,8 +227,15 @@ def main() -> None:
             p.write_text(code + "\n", encoding="utf-8")
         else:
             print(code)
-    except Exception as e:
-        print("ERROR: %s" % e, file=sys.stderr)
+    except (
+        ValueError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        KeyError,
+        json.JSONDecodeError,
+    ) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 
 
