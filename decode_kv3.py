@@ -32,7 +32,6 @@ import sys
 from typing import Any
 
 MAGIC0 = 0x03564B56
-MAGIC5 = 0x4B563305
 _MAX_INPUT_BYTES = 64 * 1024 * 1024
 _MAX_OUTPUT_BYTES = 256 * 1024 * 1024
 

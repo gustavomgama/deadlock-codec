@@ -327,25 +327,6 @@ def _payload(code: str) -> tuple[bytes, bool, int, str, str, bool]:
     return raw, compressed, stored, normalized, alphabet, padding
 
 
-def _field_map(fields: list[tuple[int, int, Any]]) -> dict[str, list[Any]]:
-    """Group parsed fields by field number for JSON output."""
-    out = {}
-    for field, wire, value in fields:
-        key = str(field)
-        if isinstance(value, tuple):
-            kind, payload = value
-            if kind == "msg":
-                item = {"message": _field_map(payload)}
-            elif kind == "str":
-                item = payload
-            else:
-                item = {"bytes_base64": base64.b64encode(payload).decode("ascii")}
-        else:
-            item = value
-        out.setdefault(key, []).append(item)
-    return out
-
-
 def _cached_candidate(
     message: list[tuple[int, int, Any]],
     issues: list[dict[str, Any]] | None = None,
