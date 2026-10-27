@@ -174,17 +174,17 @@ def read_input(arg: str) -> str:
 
 def self_test() -> None:
     """Round-trip the bundled example build code through decode and encode."""
-    import pathlib
+    import pathlib as _pathlib
     import sys as _sys
 
-    _sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    _sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parent))
     try:
         import decode_build_code as D
     except ImportError as exc:
         raise SystemExit("self-test requires decode_build_code.py") from exc
 
     example = (
-        pathlib.Path(__file__).resolve().parent / "data" / "examplecodefromgame.md"
+        _pathlib.Path(__file__).resolve().parent / "data" / "examplecodefromgame.md"
     )
     if not example.exists():
         raise SystemExit(f"self-test needs {example}")

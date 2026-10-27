@@ -24,7 +24,7 @@ def read_varint(data: bytes, i: int) -> tuple[int | None, int]:
         byte = data[i]
         i += 1
         res |= (byte & 0x7F) << shift
-        if not (byte & 0x80):
+        if not byte & 0x80:
             return res, i
         shift += 7
     return None, i
@@ -530,12 +530,10 @@ def read_input(arg: str) -> str:
             with pathlib.Path(arg).open(encoding="utf-16") as fh:
                 data = fh.read(_MAX_INPUT_BYTES + 1)
                 if len(data) > _MAX_INPUT_BYTES:
-                    raise ValueError("input file too large")
+                    raise ValueError("input file too large") from None
                 return data
         except (OSError, UnicodeDecodeError):
             return arg
-    except OSError:
-        raise
 
 
 def self_test() -> None:
@@ -550,17 +548,17 @@ def self_test() -> None:
     code = read_input(str(example))
     shared = decode_build_code(code)
     if shared["hero_id"] != 1034:
-        raise AssertionError("hero_id {}".format(shared["hero_id"]))
+        raise AssertionError(f"hero_id {shared['hero_id']}")
     if shared["hero"] != 34:
-        raise AssertionError("hero {}".format(shared["hero"]))
+        raise AssertionError(f"hero {shared['hero']}")
     if shared["is_default_build"] is not True:
         raise AssertionError("is_default_build")
     if shared["layout"] != "shared":
-        raise AssertionError("layout {}".format(shared["layout"]))
+        raise AssertionError(f"layout {shared['layout']}")
     if shared["issues"]:
-        raise AssertionError("issues {}".format(shared["issues"]))
+        raise AssertionError(f"issues {shared['issues']}")
     if len(shared["details"]["mod_categories"]) != 3:
-        raise AssertionError("categories {}".format(shared["details"]))
+        raise AssertionError(f"categories {shared['details']}")
     if not raw_document(code)["input"]["zstd"]:
         raise AssertionError("zstd")
     try:

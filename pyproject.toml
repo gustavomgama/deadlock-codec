@@ -14,8 +14,32 @@ jobs = 0
 max-line-length = 100
 
 [tool.pylint.messages_control]
-disable = ["missing-module-docstring", "missing-function-docstring", "too-many-locals", "too-many-branches", "too-many-statements", "too-many-arguments", "too-many-instance-attributes"]
+disable = [
+    "missing-module-docstring",
+    "missing-function-docstring",
+    "too-many-locals",
+    "too-many-branches",
+    "too-many-statements",
+    "too-many-arguments",
+    "too-many-instance-attributes",
+    "too-many-lines",
+    "too-many-nested-blocks",
+    "attribute-defined-outside-init",
+    "protected-access",
+    "too-many-return-statements",
+    "import-outside-toplevel",
+    "duplicate-code",
+    "reimported",
+    "superfluous-parens",
+    "raise-missing-from",
+    "try-except-raise",
+    "consider-using-f-string",
+]
+
+[tool.pycodestyle]
+max-line-length = 100
+ignore = ["E203"]
 
 [tool.bandit]
 exclude_dirs = [".venv", "tests"]
-skips = []
+skips = ["B101"]

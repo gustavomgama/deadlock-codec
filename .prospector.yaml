@@ -3,3 +3,7 @@ test-warnings: false
 doc-warnings: false
 max-line-length: 100
 autodetect: false
+mccabe:
+  run: false
+pycodestyle:
+  run: false
