@@ -879,7 +879,10 @@ def build_summary(kv3: BinaryKV3, tree: dict[str, Any]) -> dict[str, Any]:
     import pathlib as _pathlib
 
     sys.path.insert(0, str(_pathlib.Path(__file__).resolve().parent))
-    import decode_build_code as D
+    try:
+        import decode_build_code as D
+    except ImportError as exc:
+        raise KV3Error("build summary requires decode_build_code.py") from exc
 
     items = load_items()
 

@@ -6,14 +6,18 @@ import struct
 import sys
 from typing import Any
 
-import zstandard
-
 _MAX_INPUT_BYTES = 16 * 1024 * 1024
 _MAX_OUTPUT_BYTES = 64 * 1024 * 1024
 
 
-def _compressor(level: int | None = None) -> zstandard.ZstdCompressor:
+def _compressor(level: int | None = None) -> Any:
     """Build a zstd compressor for the requested level."""
+    try:
+        import zstandard
+    except ImportError as exc:
+        raise RuntimeError(
+            "encoding real build codes requires the optional 'zstandard' package"
+        ) from exc
     if level is None:
         return zstandard.ZstdCompressor()
     return zstandard.ZstdCompressor(level=level)
@@ -174,7 +178,10 @@ def self_test() -> None:
     import sys as _sys
 
     _sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-    import decode_build_code as D
+    try:
+        import decode_build_code as D
+    except ImportError as exc:
+        raise SystemExit("self-test requires decode_build_code.py") from exc
 
     example = (
         pathlib.Path(__file__).resolve().parent / "data" / "examplecodefromgame.md"

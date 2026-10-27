@@ -278,7 +278,12 @@ def _raw_fields(fields: list[tuple[int, int, Any]]) -> list[dict[str, Any]]:
 
 def _decompress(raw: bytes, max_output_size: int = 10 * 1024 * 1024) -> bytes:
     """Decompress a zstd payload, falling back to streaming reads on failure."""
-    import zstandard
+    try:
+        import zstandard
+    except ImportError as exc:
+        raise ValueError(
+            "decoding compressed build codes requires the optional 'zstandard' package"
+        ) from exc
 
     decompressor = zstandard.ZstdDecompressor()
     try:
